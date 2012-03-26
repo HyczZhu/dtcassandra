@@ -96,6 +96,14 @@ public class DefsTable
             if (column.name().equals(DEFINITION_SCHEMA_COLUMN_NAME))
                 continue;
             org.apache.cassandra.db.migration.avro.KsDef ks = SerDeUtils.deserialize(schema, column.value(), new org.apache.cassandra.db.migration.avro.KsDef());
+            /*
+            java.nio.charset.Charset charset = java.nio.charset.Charset.forName("utf-8"); 
+            java.nio.charset.CharsetDecoder decoder = charset.newDecoder();
+            java.nio.charset.CharsetEncoder encoder = charset.newEncoder();
+            java.nio.CharBuffer charbuf = decoder.decode(column.name());
+            System.out.println("Name: "+charbuf.toString());
+            System.out.println("Value: "+ks.toString());
+            */
             keyspaces.add(KSMetaData.inflate(ks));
         }
         return keyspaces;

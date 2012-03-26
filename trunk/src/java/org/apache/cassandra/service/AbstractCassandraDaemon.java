@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.SynchronousQueue;
@@ -60,7 +61,7 @@ public abstract class AbstractCassandraDaemon implements CassandraDaemon
     //Initialize logging in such a way that it checks for config changes every 10 seconds.
     static
     {
-        String config = System.getProperty("log4j.configuration", "log4j-server.properties");
+    	String config = System.getProperty("log4j.configuration", "log4j-server.properties");
         URL configLocation = null;
         try 
         {
