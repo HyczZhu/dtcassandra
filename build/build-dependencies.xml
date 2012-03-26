@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="maven-dependencies" default="init-dependencies">
 <target name="init-dependencies">
-    <echo level="info" message="Loading dependency paths from file: E:\fuck cassandra\apache-cassandra-0.8.0-src\apache-cassandra-0.8.0-src\build\build-dependencies.xml"/>
+    <echo level="info" message="Loading dependency paths from file: C:\Users\ibm\workspace\cassandra-0.8.0\build\build-dependencies.xml"/>
     <property name="com.thoughtworks.paranamer:paranamer-ant:jar" value="C:\Users\ibm\.m2\repository\com\thoughtworks\paranamer\paranamer-ant\2.1\paranamer-ant-2.1.jar"/>
     <fileset id="com.thoughtworks.paranamer:paranamer-ant:jar" dir="C:\Users\ibm\.m2\repository\com\thoughtworks\paranamer\paranamer-ant\2.1">
       <include name="paranamer-ant-2.1.jar"/>

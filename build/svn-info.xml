@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<info>
+<entry
+   kind="dir"
+   path="."
+   revision="1135038">
+<url>https://svn.apache.org/repos/asf/cassandra/tags/cassandra-0.8.0</url>
+<repository>
+<root>https://svn.apache.org/repos/asf</root>
+<uuid>13f79535-47bb-0310-9956-ffa450edef68</uuid>
+</repository>
+<wc-info>
+<schedule>normal</schedule>
+<depth>infinity</depth>
+</wc-info>
+<commit
+   revision="1130842">
+<author>eevans</author>
+<date>2011-06-02T22:03:47.015478Z</date>
+</commit>
+</entry>
+</info>

@@ -25,6 +25,9 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import jline.UnixTerminal;
+import jline.WindowsTerminal;
+
 import com.google.common.base.Charsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,6 +83,7 @@ public class DatabaseDescriptor
     private static IAuthority authority = new AllowAllAuthority();
 
     private final static String DEFAULT_CONFIGURATION = "cassandra.yaml";
+    private final static String DEFAULT_CONFIGURATION_FORWINDOWS = "cassandra.forWindows.yaml";
 
     private static IRequestScheduler requestScheduler;
     private static RequestSchedulerId requestSchedulerId;
@@ -94,8 +98,16 @@ public class DatabaseDescriptor
     static URL getStorageConfigURL() throws ConfigurationException
     {
         String configUrl = System.getProperty("cassandra.config");
-        if (configUrl == null)
-            configUrl = DEFAULT_CONFIGURATION;
+        if (configUrl == null){
+        	//the next 6 lines are used for sharing the eclipse project between Windows and Linux by Hycz
+        	String os = System.getProperty("os.name").toLowerCase();
+        	if (os.indexOf("windows") != -1) {
+        		configUrl = DEFAULT_CONFIGURATION_FORWINDOWS;
+            } else {
+            	configUrl = DEFAULT_CONFIGURATION;
+            }
+        	//configUrl = DEFAULT_CONFIGURATION;
+        }
 
         URL url;
         try

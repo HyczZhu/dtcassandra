@@ -315,6 +315,10 @@ public class CliMain
         String line = "";
         String currentStatement = "";
         boolean inCompoundStatement = false;
+        //the next 3 lines writen by Hycz
+        //System.out.println("true".equals(System.getProperty("jline.WindowsTerminal.directConsole")));
+        //jline.WindowsTerminal winTerm=(jline.WindowsTerminal)reader.getTerminal();
+        //winTerm.setDirectConsole(false);
 
         while (line != null)
         {
@@ -327,6 +331,7 @@ public class CliMain
             catch (IOException e)
             {
                 // retry on I/O Exception
+            	System.out.println("line exception");
             }
 
             if (line == null)
