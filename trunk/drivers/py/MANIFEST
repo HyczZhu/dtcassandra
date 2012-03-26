@@ -1,0 +1,16 @@
+README
+cqlsh
+setup.py
+cql/__init__.py
+cql/connection.py
+cql/connection_pool.py
+cql/cursor.py
+cql/decoders.py
+cql/errors.py
+cql/marshal.py
+cql/cassandra/Cassandra.py
+cql/cassandra/__init__.py
+cql/cassandra/constants.py
+cql/cassandra/ttypes.py
+test/test_query_compression.py
+test/test_query_preparation.py
