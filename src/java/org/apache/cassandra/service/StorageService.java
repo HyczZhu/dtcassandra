@@ -70,6 +70,8 @@ import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Tag;
 
+import hycz.dtcassandra.paxos.verbHandler.*;
+
 /*
  * This abstraction contains the token/identifier of this node
  * on the identifier space. This token gets gossiped around.
@@ -114,6 +116,13 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         UNUSED_1,
         UNUSED_2,
         UNUSED_3,
+        //use for paxos. by Hycz
+        PAXOSPREPARE,
+        PAXOSPROMISE,
+        PAXOSACCEPT,
+        PAXOSACCEPTED,
+        PAXOSDELIVER,
+        PAXOSDELIVERRESPONSE
         ;
         // remember to add new verbs at the end, since we serialize by ordinal
     }
@@ -146,6 +155,13 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         put(Verb.UNUSED_1, Stage.INTERNAL_RESPONSE);
         put(Verb.UNUSED_2, Stage.INTERNAL_RESPONSE);
         put(Verb.UNUSED_3, Stage.INTERNAL_RESPONSE);
+        //use for Paoxs. by Hycz
+        put(Verb.PAXOSPREPARE, Stage.PAXOS_PREPARE);
+        put(Verb.PAXOSPROMISE, Stage.PAXOS_PREPARE);
+        put(Verb.PAXOSACCEPT, Stage.PAXOS_ACCEPT);
+        put(Verb.PAXOSACCEPTED, Stage.PAXOS_ACCEPT);
+        put(Verb.PAXOSDELIVER, Stage.PAXOS_DELIVER);
+        put(Verb.PAXOSDELIVERRESPONSE, Stage.PAXOS_DELIVER);
     }};
 
 
@@ -259,7 +275,14 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         MessagingService.instance().registerVerbHandlers(Verb.DEFINITIONS_UPDATE_RESPONSE, new DefinitionsUpdateResponseVerbHandler());
         MessagingService.instance().registerVerbHandlers(Verb.TRUNCATE, new TruncateVerbHandler());
         MessagingService.instance().registerVerbHandlers(Verb.SCHEMA_CHECK, new SchemaCheckVerbHandler());
-
+        
+        MessagingService.instance().registerVerbHandlers(Verb.PAXOSPREPARE, new PaxosPrepareVerbHandler());
+        MessagingService.instance().registerVerbHandlers(Verb.PAXOSPROMISE, new PaxosPromiseVerbHandler());
+        MessagingService.instance().registerVerbHandlers(Verb.PAXOSACCEPT, new PaxosAcceptVerbHandler());
+        MessagingService.instance().registerVerbHandlers(Verb.PAXOSACCEPTED, new PaxosAcceptedVerbHandler());
+        MessagingService.instance().registerVerbHandlers(Verb.PAXOSDELIVER, new PaxosDeliverVerbHandler());
+        MessagingService.instance().registerVerbHandlers(Verb.PAXOSDELIVERRESPONSE, new PaxosDeliverResponseVerbHandler());
+        
         // spin up the streaming serivice so it is available for jmx tools.
         if (StreamingService.instance == null)
             throw new RuntimeException("Streaming service is unavailable.");
@@ -618,6 +641,7 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         return rangeToEndpointMap;
     }
 
+    //mark by Hycz
     /*
      * onChange only ever sees one ApplicationState piece change at a time, so we perform a kind of state machine here.
      * We are concerned with two events: knowing the token associated with an endpoint, and knowing its operation mode.

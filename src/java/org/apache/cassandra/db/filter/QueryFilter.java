@@ -59,6 +59,7 @@ public class QueryFilter
 
     public IColumnIterator getMemtableColumnIterator(Memtable memtable, AbstractType comparator)
     {
+    	System.out.println(key);
         ColumnFamily cf = memtable.getColumnFamily(key);
         if (cf == null)
             return null;

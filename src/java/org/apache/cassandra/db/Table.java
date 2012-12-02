@@ -396,7 +396,13 @@ public class Table
         List<Memtable> memtablesToFlush = Collections.emptyList();
         if (logger.isDebugEnabled())
             logger.debug("applying mutation of row {}", ByteBufferUtil.bytesToHex(mutation.key()));
-
+//        for (ColumnFamily cf : mutation.getColumnFamilies()){
+//        	for(IColumn c : cf.getColumnsMap().values()){
+//        		System.out.println(c.value());
+//        		System.out.println(ByteBufferUtil.bytesToHex(c.value()));
+//        	}
+//        }
+        
         // write the mutation to the commitlog and memtables
         switchLock.readLock().lock();
         try

@@ -33,7 +33,12 @@ public enum Stage
     MISC,
     INTERNAL_RESPONSE,
     READ_REPAIR,
-    REPLICATE_ON_WRITE;
+    REPLICATE_ON_WRITE,
+    //added by Hycz
+    PAXOS_PREPARE,
+    PAXOS_ACCEPT,
+    PAXOS_DELIVER,
+    PAXOS_LEADER;
 
     public String getJmxType()
     {
@@ -51,6 +56,11 @@ public enum Stage
             case REQUEST_RESPONSE:
             case REPLICATE_ON_WRITE:
             case READ_REPAIR:
+            //just for test
+            case PAXOS_PREPARE:
+            case PAXOS_ACCEPT:
+            case PAXOS_DELIVER:
+            case PAXOS_LEADER:
                 return "request";
             default:
                 throw new AssertionError("Unknown stage " + this);

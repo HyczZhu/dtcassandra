@@ -42,6 +42,7 @@ import org.apache.cassandra.db.ColumnFamilyType;
 import org.apache.cassandra.db.DefsTable;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.migration.Migration;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -406,6 +407,14 @@ public class DatabaseDescriptor
             CFMetaData.map(CFMetaData.IndexCf);
             CFMetaData.map(CFMetaData.NodeIdCf);
             tables.put(Table.SYSTEM_TABLE, systemMeta);
+            
+                        
+//            
+//            String instanceSlot="instanceSlot";
+//            KSMetaData instanceSlotMeta = new KSMetaData(
+//            		instanceSlot, LocalStrategy.class, KSMetaData.optsWithRF(1), CFMetaData.intanceSlotCf);
+//            CFMetaData.map(CFMetaData.intanceSlotCf);
+//            tables.put(instanceSlot, instanceSlotMeta);
             
             /* Load the seeds for node contact points */
             if (conf.seed_provider == null)

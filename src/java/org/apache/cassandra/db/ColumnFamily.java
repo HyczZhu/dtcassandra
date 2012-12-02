@@ -40,6 +40,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.IIterableColumns;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class ColumnFamily implements IColumnContainer, IIterableColumns
@@ -127,8 +128,11 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     */
     public void addAll(ColumnFamily cf)
     {
-        for (IColumn column : cf.getSortedColumns())
+        for (IColumn column : cf.getSortedColumns()){
             addColumn(column);
+//            System.out.println(column.value());
+//            System.out.println(ByteBufferUtil.bytesToHex(column.value()));
+        }
         delete(cf);
     }
 

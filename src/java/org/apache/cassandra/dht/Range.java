@@ -323,6 +323,11 @@ public class Range extends AbstractBounds implements Comparable<Range>, Serializ
     
     public String toString()
     {
+        return left + "to" + right;
+    }
+    
+    public String toString2()
+    {
         return "(" + left + "," + right + "]";
     }
 

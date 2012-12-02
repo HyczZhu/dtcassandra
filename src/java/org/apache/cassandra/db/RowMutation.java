@@ -92,7 +92,7 @@ public class RowMutation implements IMutation, MessageProducer
         return modifications_.values();
     }
 
-    void addHints(RowMutation rm) throws IOException
+    public void addHints(RowMutation rm) throws IOException
     {
         for (ColumnFamily cf : rm.getColumnFamilies())
         {

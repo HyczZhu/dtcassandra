@@ -57,6 +57,7 @@ public class IncomingTcpConnection extends Thread
         DataInputStream input;
         boolean isStream;
         int version;
+        logger.debug("get a incoming tcp connection");
         try
         {
             // determine the connection type to decide whether to buffer

@@ -25,6 +25,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 
 import org.apache.cassandra.thrift.ColumnParent;
 import org.apache.cassandra.thrift.ColumnPath;
@@ -41,6 +42,18 @@ public class QueryPath
         this.columnFamilyName = columnFamilyName;
         this.superColumnName = superColumnName;
         this.columnName = columnName;
+        try {
+			System.out.println(getClass().getSimpleName() + "(" +
+			        "columnFamilyName='" + columnFamilyName + '\'' +
+			        ", superColumnName='" + ByteBufferUtil.string(superColumnName) + '\'' +
+			        ", columnName='" + columnName + '\'' +
+			        ')');
+		} catch (CharacterCodingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (Exception e){
+			
+		}
     }
 
     public QueryPath(ColumnParent columnParent)

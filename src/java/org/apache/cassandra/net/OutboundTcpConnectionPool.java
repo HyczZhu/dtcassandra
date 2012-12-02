@@ -22,7 +22,7 @@ import java.net.InetAddress;
 
 import org.apache.cassandra.concurrent.Stage;
 
-class OutboundTcpConnectionPool
+public class OutboundTcpConnectionPool
 {
     public final OutboundTcpConnection cmdCon;
     public final OutboundTcpConnection ackCon;
@@ -42,7 +42,7 @@ class OutboundTcpConnectionPool
     OutboundTcpConnection getConnection(Message msg)
     {
         Stage stage = msg.getMessageType();
-        return stage == Stage.REQUEST_RESPONSE || stage == Stage.INTERNAL_RESPONSE || stage == Stage.GOSSIP
+        return stage == Stage.PAXOS_PREPARE || stage == Stage.REQUEST_RESPONSE || stage == Stage.INTERNAL_RESPONSE || stage == Stage.GOSSIP
                ? ackCon
                : cmdCon;
     }
