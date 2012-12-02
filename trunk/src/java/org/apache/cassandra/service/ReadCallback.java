@@ -62,7 +62,7 @@ public class ReadCallback<T> implements IAsyncCallback
     protected final SimpleCondition condition = new SimpleCondition();
     private final long startTime;
     protected final int blockfor;
-    final List<InetAddress> endpoints;
+    public final List<InetAddress> endpoints;
     private final IReadCommand command;
     protected final AtomicInteger received = new AtomicInteger(0);
 

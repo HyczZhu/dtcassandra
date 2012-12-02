@@ -317,8 +317,8 @@ public class CliMain
         boolean inCompoundStatement = false;
         //the next 3 lines writen by Hycz
         //System.out.println("true".equals(System.getProperty("jline.WindowsTerminal.directConsole")));
-        //jline.WindowsTerminal winTerm=(jline.WindowsTerminal)reader.getTerminal();
-        //winTerm.setDirectConsole(false);
+        jline.WindowsTerminal winTerm=(jline.WindowsTerminal)reader.getTerminal();
+        winTerm.setDirectConsole(false);
 
         while (line != null)
         {

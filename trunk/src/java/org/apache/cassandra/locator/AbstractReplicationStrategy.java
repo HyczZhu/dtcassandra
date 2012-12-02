@@ -38,6 +38,9 @@ import org.apache.cassandra.thrift.ConsistencyLevel;
 import org.apache.cassandra.utils.FBUtilities;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
+import hycz.dtcassandra.paxos.callback.IPaxosResponseHandler;
+import hycz.dtcassandra.paxos.callback.PrepareResponseHandler;
+
 /**
  * A abstract parent for all replication strategies.
 */
@@ -81,6 +84,7 @@ public abstract class AbstractReplicationStrategy
         cachedEndpoints.clear();
     }
 
+    //marked important by Hycz
     /**
      * get the (possibly cached) endpoints that should store the given Token
      * Note that while the endpoints are conceptually a Set (no duplicates will be included),
@@ -134,6 +138,23 @@ public abstract class AbstractReplicationStrategy
         }
         return WriteResponseHandler.create(writeEndpoints, hintedEndpoints, consistency_level, table);
     }
+    
+    //TODO add AcceptResponseHander. by Hycz
+//	public IPaxosResponseHandler getPaxosResponseHandler(
+//			Collection<InetAddress> acceptorEndpoints,
+//			Multimap<InetAddress, InetAddress> witnessAcceptorEndpoints,
+//			ConsistencyLevel consistency_level) {
+////		if (consistency_level == ConsistencyLevel.LOCAL_QUORUM) {
+////			// block for in this context will be localnodes block.
+////			return DatacenterWriteResponseHandler.create(acceptorEndpoints,
+////					witnessAcceptorEndpoints, consistency_level, table);
+////		} else if (consistency_level == ConsistencyLevel.EACH_QUORUM) {
+////			return DatacenterSyncWriteResponseHandler.create(acceptorEndpoints,
+////					witnessAcceptorEndpoints, consistency_level, table);
+////		}
+//		return PrepareResponseHandler.create(acceptorEndpoints, witnessAcceptorEndpoints,
+//				consistency_level, table);
+//	}
 
     /**
      * calculate the RF based on strategy_options. When overwriting, ensure that this get()
@@ -143,6 +164,7 @@ public abstract class AbstractReplicationStrategy
      */
     public abstract int getReplicationFactor();
 
+    //用(live destination, ultimate targets)来表示是否hint，一样则不是hint，不一样则后者是最终目的地
     /**
      * returns <tt>Multimap</tt> of {live destination: ultimate targets}, where if target is not the same
      * as the destination, it is a "hinted" write, and will need to be sent to
@@ -182,6 +204,7 @@ public abstract class AbstractReplicationStrategy
                 continue;
             }
 
+            //开始加入hint destination
             InetAddress destination = map.isEmpty()
                                     ? localAddress
                                     : snitch.getSortedListByProximity(localAddress, map.keySet()).get(0);

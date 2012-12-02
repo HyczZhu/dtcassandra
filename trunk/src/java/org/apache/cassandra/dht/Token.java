@@ -89,6 +89,7 @@ public abstract class Token<T> implements Comparable<Token<T>>, Serializable
         {
             IPartitioner p = StorageService.getPartitioner();
             int size = dis.readInt();
+//            System.out.println("Token size = "+size);
             byte[] bytes = new byte[size];
             dis.readFully(bytes);
             return p.getTokenFactory().fromByteArray(ByteBuffer.wrap(bytes));

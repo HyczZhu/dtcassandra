@@ -170,12 +170,15 @@ public class OutboundTcpConnection extends Thread
                     socket = SSLFactory.getSocket(DatabaseDescriptor.getEncryptionOptions(), endpoint, DatabaseDescriptor.getStoragePort(), FBUtilities.getLocalAddress(), 0);
                 }
                 else {
+//                	logger.debug("making socket to "+endpoint+":"+DatabaseDescriptor.getStoragePort()+" from "+FBUtilities.getLocalAddress()+":0");
                     socket = new Socket(endpoint, DatabaseDescriptor.getStoragePort(), FBUtilities.getLocalAddress(), 0);
+//                    logger.debug("socket made to "+endpoint+":"+DatabaseDescriptor.getStoragePort()+" from "+FBUtilities.getLocalAddress()+":0");
                 }
 
                 socket.setKeepAlive(true);
                 socket.setTcpNoDelay(true);
                 output = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 4096));
+                logger.debug("connection to "+endpoint+" has been established");
                 return true;
             }
             catch (IOException e)

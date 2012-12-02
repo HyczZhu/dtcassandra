@@ -71,6 +71,7 @@ public class StorageProxy implements StorageProxyMBean
     private static int maxHintWindow = DatabaseDescriptor.getMaxHintWindow();
     public static final String UNREACHABLE = "UNREACHABLE";
 
+    private static final WritePerformer transactionWritePerformer;
     private static final WritePerformer standardWritePerformer;
     private static final WritePerformer counterWritePerformer;
     private static final WritePerformer counterWriteOnCoordinatorPerformer;
@@ -90,9 +91,19 @@ public class StorageProxy implements StorageProxyMBean
         {
             throw new RuntimeException(e);
         }
+        
+        //added by Hycz
+        transactionWritePerformer = new WritePerformer(){
+        	public void apply(IMutation mutation, Multimap<InetAddress, InetAddress> hintedEndpoints, IWriteResponseHandler responseHandler, String localDataCenter, ConsistencyLevel consistency_level) throws IOException
+            {
+                //assert mutation instanceof RowMutation;
+                //sendToHintedEndpoints((RowMutation) mutation, hintedEndpoints, responseHandler, localDataCenter, true, consistency_level);
+            }
+        };
 
         standardWritePerformer = new WritePerformer()
         {
+        	//write的主执行体。 by Hycz
             public void apply(IMutation mutation, Multimap<InetAddress, InetAddress> hintedEndpoints, IWriteResponseHandler responseHandler, String localDataCenter, ConsistencyLevel consistency_level) throws IOException
             {
                 assert mutation instanceof RowMutation;
@@ -122,6 +133,15 @@ public class StorageProxy implements StorageProxyMBean
             }
         };
     }
+    
+    
+    public static void testPrepare(Integer n){
+    	
+    }
+    
+//    public static void testaccept(Integer n, TransactionMutations v){
+//    	
+//    }
 
     /**
      * Use this method to have these Mutations applied
@@ -200,6 +220,7 @@ public class StorageProxy implements StorageProxyMBean
         AbstractReplicationStrategy rs = Table.open(table).getReplicationStrategy();
 
         Collection<InetAddress> writeEndpoints = getWriteEndpoints(table, mutation.key());
+        //hintedEndpoints包括了正常endpoint和hint endpoint, 用来表示所有的目标地址。 by Hycz
         Multimap<InetAddress, InetAddress> hintedEndpoints = rs.getHintedEndpoints(writeEndpoints);
 
         IWriteResponseHandler responseHandler = rs.getWriteResponseHandler(writeEndpoints, hintedEndpoints, consistency_level);
@@ -218,9 +239,22 @@ public class StorageProxy implements StorageProxyMBean
         return ss.getTokenMetadata().getWriteEndpoints(StorageService.getPartitioner().getToken(key), table, naturalEndpoints);
     }
 
-    private static void sendToHintedEndpoints(final RowMutation rm, Multimap<InetAddress, InetAddress> hintedEndpoints, IWriteResponseHandler responseHandler, String localDataCenter, boolean insertLocalMessages, ConsistencyLevel consistency_level)
-    throws IOException
-    {
+    /***
+     * 
+     * @param rm 一个行更改操作
+     * @param hintedEndpoints 所有目标节点
+     * @param responseHandler 回应处理
+     * @param localDataCenter 
+     * @param insertLocalMessages
+     * @param consistency_level
+     * @throws IOException
+     */
+    //write的主要内部执行体。在1.0中被改掉了，主要是insertLocal的判断和hintedEndpoints的结构。by Hycz
+	private static void sendToHintedEndpoints(final RowMutation rm,
+			Multimap<InetAddress, InetAddress> hintedEndpoints,
+			IWriteResponseHandler responseHandler, String localDataCenter,
+			boolean insertLocalMessages, ConsistencyLevel consistency_level)
+			throws IOException {
         // Multimap that holds onto all the messages and addresses meant for a specific datacenter
         Map<String, Multimap<Message, InetAddress>> dcMessages = new HashMap<String, Multimap<Message, InetAddress>>(hintedEndpoints.size());
         MessageProducer producer = new CachingMessageProducer(rm);
@@ -234,12 +268,14 @@ public class StorageProxy implements StorageProxyMBean
 
             if (targets.size() == 1 && targets.iterator().next().equals(destination))
             {
+            	// 单个消息本地处理
                 // unhinted writes
                 if (destination.equals(FBUtilities.getLocalAddress()))
                 {
                     if (insertLocalMessages)
                         insertLocal(rm, responseHandler);
                 }
+                // 单个消息转发
                 else
                 {
                     // belongs on a different server
@@ -256,6 +292,7 @@ public class StorageProxy implements StorageProxyMBean
                     messages.put(producer.getMessage(Gossiper.instance.getVersion(destination)), destination);
                 }
             }
+            // hint发送
             else
             {
                 // hinted messages are unique, so there is no point to adding a hop by forwarding via another node.
@@ -277,6 +314,7 @@ public class StorageProxy implements StorageProxyMBean
                     MessagingService.instance().sendOneWay(hintedMessage, destination);
             }
         }
+        // 转发发送
         sendMessages(localDataCenter, dcMessages, responseHandler);
     }
 
@@ -332,7 +370,7 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
-    private static void addHintHeader(Message message, InetAddress target) throws IOException
+    public static void addHintHeader(Message message, InetAddress target) throws IOException
     {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(bos);
@@ -374,6 +412,9 @@ public class StorageProxy implements StorageProxyMBean
      * quicker response and because the WriteResponseHandlers don't make it easy to send back an error. We also always gather
      * the write latencies at the coordinator node to make gathering point similar to the case of standard writes.
      */
+    //发起mutation的节点称为coordinator node，mutation的目标节点是replica
+    //如果目标节点就是coordinator node，就用applyCounterMutationOnCoordinator执行
+    //否则，把这个mutation的消息发送到目标节点的一个replica执行，这个replica称为leader
     public static IWriteResponseHandler mutateCounter(CounterMutation cm, String localDataCenter) throws UnavailableException, TimeoutException, IOException
     {
         InetAddress endpoint = findSuitableEndpoint(cm.getTable(), cm.key());
@@ -405,6 +446,7 @@ public class StorageProxy implements StorageProxyMBean
     private static InetAddress findSuitableEndpoint(String table, ByteBuffer key) throws UnavailableException
     {
         List<InetAddress> endpoints = StorageService.instance.getLiveNaturalEndpoints(table, key);
+        //从一组endpoints里选一个，作为leader，返回
         DatabaseDescriptor.getEndpointSnitch().sortByProximity(FBUtilities.getLocalAddress(), endpoints);
         if (endpoints.isEmpty())
             throw new UnavailableException();

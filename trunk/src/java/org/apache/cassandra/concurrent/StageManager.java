@@ -51,6 +51,11 @@ public class StageManager
         stages.put(Stage.MIGRATION, new JMXEnabledThreadPoolExecutor(Stage.MIGRATION));
         stages.put(Stage.MISC, new JMXEnabledThreadPoolExecutor(Stage.MISC));
         stages.put(Stage.READ_REPAIR, multiThreadedStage(Stage.READ_REPAIR, Runtime.getRuntime().availableProcessors()));
+        //added by Hycz
+        stages.put(Stage.PAXOS_PREPARE, multiThreadedConfigurableStage(Stage.PAXOS_PREPARE, getConcurrentWriters()/10));
+        stages.put(Stage.PAXOS_ACCEPT, multiThreadedConfigurableStage(Stage.PAXOS_ACCEPT, getConcurrentWriters()/10));
+        stages.put(Stage.PAXOS_DELIVER, multiThreadedConfigurableStage(Stage.PAXOS_DELIVER, getConcurrentWriters()/10));
+        stages.put(Stage.PAXOS_LEADER, multiThreadedConfigurableStage(Stage.PAXOS_LEADER, getConcurrentWriters()/10));
     }
 
     private static ThreadPoolExecutor multiThreadedStage(Stage stage, int numThreads)

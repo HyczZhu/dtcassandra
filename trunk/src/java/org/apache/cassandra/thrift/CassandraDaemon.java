@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.thrift;
 
+import hycz.dtcassandra.test.Patch;
+
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
@@ -78,6 +80,12 @@ public class CassandraDaemon extends org.apache.cassandra.service.AbstractCassan
     public static void main(String[] args)
     {
         new CassandraDaemon().activate();
+        
+
+        System.out.println("pre patch");
+        logger.info("pre patch");
+        Patch.doPatch();
+        
     }
 
     /**

@@ -79,6 +79,10 @@ public final class CFMetaData
     public static final CFMetaData IndexCf = newSystemMetadata(SystemTable.INDEX_CF, 5, "indexes that have been completed", UTF8Type.instance, null, DEFAULT_SYSTEM_MEMTABLE_THROUGHPUT_IN_MB);
     public static final CFMetaData NodeIdCf = newSystemMetadata(SystemTable.NODE_ID_CF, 6, "nodeId and their metadata", TimeUUIDType.instance, null, DEFAULT_SYSTEM_MEMTABLE_THROUGHPUT_IN_MB);
     private static final ByteBuffer DEFAULT_KEY_NAME = ByteBufferUtil.bytes("KEY");
+    
+	public static final CFMetaData intanceSlotCf = newSystemMetadata("InstanceSlot", 10,
+			"instance slot", BytesType.instance, null,
+			DEFAULT_SYSTEM_MEMTABLE_THROUGHPUT_IN_MB);
 
     /**
      * @return A calculated memtable throughput size for this machine.
