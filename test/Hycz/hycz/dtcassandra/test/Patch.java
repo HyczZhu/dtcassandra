@@ -27,6 +27,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ColumnFamilyType;
@@ -39,11 +40,14 @@ import org.apache.cassandra.db.SuperColumn;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
+import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.migration.AddColumnFamily;
 import org.apache.cassandra.db.migration.AddKeyspace;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.LocalStrategy;
+import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -61,6 +65,8 @@ import hycz.dtcassandra.paxos.PaxosInstanceManager;
 import hycz.dtcassandra.paxos.PaxosLeaderInstance;
 import hycz.dtcassandra.paxos.PaxosLeaderInstanceManager;
 import hycz.dtcassandra.paxos.PaxosOverallManager;
+import hycz.dtcassandra.paxos.PaxosValueFactory;
+import hycz.dtcassandra.paxos.RowMutationPaxosValue;
 import hycz.dtcassandra.paxos.StringPaxosValue;
 import hycz.dtcassandra.paxos.actor.Actor;
 import hycz.dtcassandra.paxos.actor.ActorRole;
@@ -249,7 +255,8 @@ public class Patch {
 				public void run() {
 //					testCase();
 //					testCase2();
-					testCase3();
+//					testCase3();
+					testCase4();
 				}
 			};
 			task.start();
@@ -658,6 +665,7 @@ public class Patch {
 //		}
 	}
 	
+	// try to make consensus at a StringPaxosValue and deliver it
 	public static void testCase3(){
 		String fromaddress = new String("dtc00");
 		InetAddress localhost;
@@ -677,6 +685,52 @@ public class Patch {
 			boolean deliverSuccess = PaxosOverallManager.get(tableName, range).deliverValue(instanceNum, ConsistencyLevel.ANY);
 			System.out.println("deliver success = " + deliverSuccess);
 		}catch(Exception e){
+			e.printStackTrace();
+		}
+	}
+	
+	// try to make consensus at a RowMutationPaxosValue and deliver it
+	public static void testCase4(){
+		String fromaddress = new String("dtc00");
+		InetAddress localhost;
+		InetAddress from;
+		try {
+			localhost = FBUtilities.getLocalAddress();
+			from = InetAddress.getByName(fromaddress);
+			System.out.println("LocalAddress="
+					+ localhost.getHostAddress());
+			System.out.println("From=" + from.getHostAddress());
+			if (!from.equals(FBUtilities.getLocalAddress())) return;
+			
+			String tableName = SimpleAccess.TESTTABLE;
+			String key = "RowMutationKey0000001";
+			String columnfamilyName = SimpleAccess.CF_RANGE_pre;
+			String supercolumnName = "testSuperColumn01";
+			String columnName = "testColumn";
+			String value = "testValue";
+			
+			DecoratedKey dk = Util.dk(key);
+			RowMutation rm = new RowMutation(tableName, dk.key);
+			ColumnFamily cf = ColumnFamily.create(tableName, SimpleAccess.CF_RANGE_pre);
+			SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(supercolumnName), BytesType.instance);
+			Column c=new Column(ByteBufferUtil.bytes(columnName), ByteBufferUtil.bytes(value), System.currentTimeMillis());
+			sc.addColumn(c);
+			cf.addColumn(sc);
+			rm.add(cf);
+			
+			Token t = StorageService.getPartitioner().getToken(ByteBufferUtil.bytes(key));
+			TokenMetadata tokenMetadata = StorageService.instance.getTokenMetadata();
+			Range range = new Range(tokenMetadata.getPredecessor(t),tokenMetadata.getSuccessor(t));
+			
+			long instanceNum = PaxosOverallManager.get(tableName, range)
+				.makeConsensus(new RowMutationPaxosValue(tableName, range, rm));
+			System.out.println("result = " + instanceNum);
+			boolean deliverSuccess = PaxosOverallManager.get(tableName, range).deliverValue(instanceNum, ConsistencyLevel.ANY);
+			System.out.println("deliver success = " + deliverSuccess);
+		} 
+		catch(NullPointerException e){
+			e.printStackTrace();
+		} catch (UnknownHostException e) {
 			e.printStackTrace();
 		}
 	}
@@ -937,13 +991,14 @@ public class Patch {
 			cassandraClient.set_keyspace(keyspace);
 			// KsDef ksdef = cassandraClient.describe_keyspace(keyspace);
 			// System.out.println(ksdef);
+			
 			cassandraClient.insert(
 					row,
 					parent,
-					new Column(ByteBufferUtil.bytes("col1")).setValue(
+					new org.apache.cassandra.thrift.Column(ByteBufferUtil.bytes("col1")).setValue(
 							ByteBufferUtil.bytes("val1")).setTimestamp(1),
 					ConsistencyLevel.ONE);
-			Column column = cassandraClient.get(row, col, ConsistencyLevel.ONE).column;
+			org.apache.cassandra.thrift.Column column = cassandraClient.get(row, col, ConsistencyLevel.ONE).column;
 			System.out
 					.println("read row " + new String(row.array()) + " "
 							+ new String(column.name.array()) + ":"
