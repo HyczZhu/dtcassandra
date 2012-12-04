@@ -1,6 +1,7 @@
 package hycz.dtcassandra.paxos.message;
 
 import hycz.dtcassandra.paxos.IPaxosValue;
+import hycz.dtcassandra.paxos.PaxosValueFactory;
 import hycz.dtcassandra.paxos.StringPaxosValue;
 
 import java.io.ByteArrayOutputStream;
@@ -128,7 +129,8 @@ public class DeliverMessage implements MessageProducer,IPaxosMessage {
 			dos.writeBoolean(pm.hasValue());
 			if (pm.hasValue()){
 				//need to change to other type
-				StringPaxosValue.serializer().serialize(pm.getPaxosValue(), dos);
+//				StringPaxosValue.serializer().serialize(pm.getPaxosValue(), dos);
+				PaxosValueFactory.serializer().serialize(pm.getPaxosValue(), dos, version);
 			}
 		}
 
@@ -141,7 +143,8 @@ public class DeliverMessage implements MessageProducer,IPaxosMessage {
 			boolean hasValue = dis.readBoolean();
 			IPaxosValue paxosValue = null;
 			if (hasValue)
-				paxosValue=StringPaxosValue.serializer().deserialize(dis);
+//				paxosValue=StringPaxosValue.serializer().deserialize(dis);
+				paxosValue = PaxosValueFactory.serializer().deserialize(dis, version);
 			
 			return new DeliverMessage(tableName, range, instanceNumber, proposalNumber,paxosValue);
 		}

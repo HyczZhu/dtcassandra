@@ -50,6 +50,7 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.migration.AddColumnFamily;
 import org.apache.cassandra.db.migration.AddKeyspace;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.locator.LocalStrategy;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.net.MessagingService;
@@ -88,9 +89,12 @@ public class SimpleAccess {
 	public final static String COLUMNPREFIX = "Instance";
 	public final static String TESTTABLE = "TestTable";
 	
+	public final static int version = Gossiper.instance.getVersion(FBUtilities.getLocalAddress());
+	
 	static {
 		tryAddNewKeyspace();
 		tryAddNewColumnFamily();
+		tryAddTestKeyspace();
 	}
 	
 	public static PaxosInstance getInstance(String tableName, Range range, long instanceNumber){
@@ -166,8 +170,9 @@ public class SimpleAccess {
 		
 		ByteBuffer state = ByteBufferUtil.bytes(PaxosState.Pending);
 		ByteBuffer proposalNum = ByteBufferUtil.bytes(new Long(-1).longValue());
-//		ByteBuffer value = ByteBuffer.wrap(StringPaxosValue.makeNullValue().toBytes());
-		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.VALUETYPE_STRING);
+		//TODO more valuetype support
+		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.VALUETYPE_ROWMUTATION);
+		
 		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), state, System.currentTimeMillis());
 		Column c2=new Column(ByteBufferUtil.bytes(C_PROPOSALNUM), proposalNum, System.currentTimeMillis());
 //		Column c3=new Column(ByteBufferUtil.bytes(C_ACCEPTEDVALUE), value, System.currentTimeMillis());
@@ -224,12 +229,15 @@ public class SimpleAccess {
 		DecoratedKey dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.getValueType(value));
 		
 		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber), BytesType.instance);
 		Column c2=new Column(ByteBufferUtil.bytes(C_PROPOSALNUM), ByteBufferUtil.bytes(proposalNum), System.currentTimeMillis());
 		Column c3=new Column(ByteBufferUtil.bytes(C_ACCEPTEDVALUE), ByteBuffer.wrap(value.toBytes()), System.currentTimeMillis());
+		Column c4=new Column(ByteBufferUtil.bytes(C_VALUETYPE), valueType, System.currentTimeMillis());
 		sc.addColumn(c2);
 		sc.addColumn(c3);
+		sc.addColumn(c4);
 		cf.addColumn(sc);
 		rm.add(cf);
 		
@@ -243,14 +251,17 @@ public class SimpleAccess {
 		DecoratedKey dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.getValueType(value));
 		
 		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber), BytesType.instance);
 		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), ByteBufferUtil.bytes(PaxosState.Closed), System.currentTimeMillis());
 		Column c2=new Column(ByteBufferUtil.bytes(C_PROPOSALNUM), ByteBufferUtil.bytes(proposalNum), System.currentTimeMillis());
 		Column c3=new Column(ByteBufferUtil.bytes(C_ACCEPTEDVALUE), ByteBuffer.wrap(value.toBytes()), System.currentTimeMillis());
+		Column c4=new Column(ByteBufferUtil.bytes(C_VALUETYPE), valueType, System.currentTimeMillis());
 		sc.addColumn(c1);
 		sc.addColumn(c2);
 		sc.addColumn(c3);
+		sc.addColumn(c4);
 		cf.addColumn(sc);
 		rm.add(cf);
 		
@@ -734,7 +745,7 @@ public class SimpleAccess {
 					e.printStackTrace();
 				}
 			} else {
-				logger.debug("SuperColumnFamily "+CF_RANGE_pre+" already exists.");
+				logger.debug("SuperColumnFamily "+CF_RANGE_pre + range +" already exists.");
 			}
 		}
 		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
@@ -757,7 +768,7 @@ public class SimpleAccess {
 					e.printStackTrace();
 				}
 			} else {
-				logger.debug("SuperColumnFamily "+CF_RANGE_pre+" already exists.");
+				logger.debug("SuperColumnFamily "+CF_RANGE_pre + range +" already exists.");
 			}
 		}
 		CFMetaData newCf = new CFMetaData(TABLE, CF_RANGE_pre,
@@ -771,6 +782,43 @@ public class SimpleAccess {
 				.containsKey(newCf.cfName)) {
 			try {
 				new AddColumnFamily(newCf).apply();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (ConfigurationException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else {
+			logger.debug("SuperColumnFamily "+CF_RANGE_pre+" already exists.");
+		}
+	}
+	
+	public static void tryAddTestKeyspace() {		
+		CFMetaData testCf = new CFMetaData(TESTTABLE, CF_RANGE_pre,
+				ColumnFamilyType.Super, BytesType.instance, null);
+		testCf.comment("instance slot").keyCacheSize(1.0).readRepairChance(0.0)
+				.mergeShardsChance(0.0);
+		KSMetaData testKs = new KSMetaData(testCf.ksName, SimpleStrategy.class,
+				KSMetaData.optsWithRF(1));
+
+		if (DatabaseDescriptor.getTableDefinition(testCf.ksName) == null) {
+			try {
+				new AddKeyspace(testKs).apply();
+			} catch (ConfigurationException e) {
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else {
+			logger.debug("Keyspace TestTable already exists.");
+		}
+
+		if (!DatabaseDescriptor.getTableDefinition(testKs.name).cfMetaData()
+				.containsKey(testCf.cfName)) {
+			try {
+				new AddColumnFamily(testCf).apply();
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
