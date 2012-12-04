@@ -198,7 +198,11 @@ public class PaxosLeaderInstanceManager {
 		}
 	}
 	
-	// 返回的是最终记录此value的那个instance num
+	/***
+	 * 返回的是最终记录此value的那个instance num
+	 * @param value
+	 * @return 返回的是最终记录此value的那个instance num, 失败则返回-1
+	 */
 	public long makeConsensus(IPaxosValue value){
 		try {
 			PaxosLeaderInstance empty = null;
