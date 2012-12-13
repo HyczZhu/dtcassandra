@@ -59,7 +59,7 @@ public class QueryFilter
 
     public IColumnIterator getMemtableColumnIterator(Memtable memtable, AbstractType comparator)
     {
-    	System.out.println(key);
+//    	System.out.println(key);
         ColumnFamily cf = memtable.getColumnFamily(key);
         if (cf == null)
             return null;
@@ -180,6 +180,9 @@ public class QueryFilter
         return new QueryFilter(key, path, new IdentityQueryFilter());
     }
 
+    //当需要super column或者standard column级别的时候，path的superColumnName不需要设置，只要设置columns就可以
+    //当需要sub column级别的时候，path的superColumnName需要设置，columns设置为sub columns
+    //也就是说，columns放的是此次查询中最细粒度的column名称，path中的superColumnName是否需要设置只取决于查询的粒度（查询到sub column最细，查询standard column和super column同样级别）
     /**
      * @return a QueryFilter object that will return columns matching the given names
      * @param key the row to slice

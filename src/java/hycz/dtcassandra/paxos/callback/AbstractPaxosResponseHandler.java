@@ -31,6 +31,7 @@ public abstract class AbstractPaxosResponseHandler implements
 	private String tableName;
 	private Range range;
 	private final long instanceNumber;
+	private long timestamp;
 
 	protected AbstractPaxosResponseHandler(
 			String tableName,
@@ -48,6 +49,7 @@ public abstract class AbstractPaxosResponseHandler implements
 		for (Entry<InetAddress, InetAddress> entry : acceptors.entrySet()){
 			this.witnessAcceptorEndpoints.put(entry.getValue(), entry.getKey());
 		}
+		this.timestamp = -1L;
 	}
 	
 	protected AbstractPaxosResponseHandler(
@@ -64,6 +66,7 @@ public abstract class AbstractPaxosResponseHandler implements
 		this.consistencyLevel = consistencyLevel;
 		this.witnessAcceptorEndpoints = witnessAcceptorEndpoints;
 		this.acceptorEndpoints = acceptorEndpoints;
+		this.timestamp = -1L;
 	}
 
 	// TODO may need overwrite to return PaxosResponseType.Nack
@@ -95,11 +98,21 @@ public abstract class AbstractPaxosResponseHandler implements
 	public long getInstanceNumber(){
 		return instanceNumber;
 	}
+	
+	public long getTimestamp(){
+		return timestamp;
+	}
+	
+	public void setTimestamp(long timestamp){
+		this.timestamp = timestamp;
+	}
 
 	/** null message means "response from local write" */
 	public abstract void response(Message msg);
 	
-	public abstract void response(IPaxosMessage msg);
+	public abstract void response(IPaxosMessage pmsg);
+	
+	public abstract void response(IPaxosMessage pmsg, Message message);
 
 	public abstract void assureSufficientLiveNodes()
 			throws UnavailableException;

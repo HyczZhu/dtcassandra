@@ -8,8 +8,10 @@ import hycz.dtcassandra.paxos.message.IPaxosMessage;
 import hycz.dtcassandra.paxos.message.PromiseMessage;
 
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -20,6 +22,7 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.thrift.ConsistencyLevel;
 import org.apache.cassandra.thrift.UnavailableException;
+import org.apache.cassandra.utils.FBUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,8 +40,13 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 	protected boolean nackResponse;
 	private AtomicInteger nackcount;
 
+	// when this handler is used for prepare phase, promisedProposalNumber is just what it is as the name represents
+	// when this handler is used for current read up-to-date validation, promisedProposalNumber represents the current instance num
 	private long promisedProposalNumber;
 	private IPaxosValue acceptedPaxosValue;
+	
+	// only used for current read up-to-date validation
+	private List<InetAddress> uptodateEndpoints;
 
 	protected PrepareResponseHandler(
 			String tableName,
@@ -54,6 +62,7 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 		nackcount = new AtomicInteger(0);
 		promisedProposalNumber=-1;
 		acceptedPaxosValue=null;
+		uptodateEndpoints = new ArrayList<InetAddress>();
 	}
 	
 	protected PrepareResponseHandler(
@@ -71,6 +80,7 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 		nackcount = new AtomicInteger(0);
 		promisedProposalNumber=-1;
 		acceptedPaxosValue=null;
+		uptodateEndpoints = new ArrayList<InetAddress>();
 	}
 
 	protected PrepareResponseHandler(String tableName, Range range, long instanceNumber, InetAddress endpoint) {
@@ -86,6 +96,7 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 		nackcount = new AtomicInteger(0);
 		promisedProposalNumber=-1;
 		acceptedPaxosValue=null;
+		uptodateEndpoints = new ArrayList<InetAddress>();
 	}
 	
 	public static PrepareResponseHandler create(
@@ -113,13 +124,17 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 	}
 	
 	@Override
-	public void response(IPaxosMessage msg){
-		if (msg instanceof PromiseMessage){
-			if (msg.getProposalNumber()>this.promisedProposalNumber){
-				this.promisedProposalNumber=msg.getProposalNumber();
-				this.acceptedPaxosValue=msg.getPaxosValue();
+	public void response(IPaxosMessage pmsg){
+		if (pmsg instanceof PromiseMessage){
+			if (pmsg.getProposalNumber()>this.promisedProposalNumber){
+				this.promisedProposalNumber=pmsg.getProposalNumber();
+				if (pmsg.getPaxosValue() != null)
+					this.acceptedPaxosValue=pmsg.getPaxosValue();
 			}
-			if (((PromiseMessage)msg).isNack()){
+			if (((PromiseMessage)pmsg).getTimestamp() > getTimestamp()){
+				setTimestamp(((PromiseMessage)pmsg).getTimestamp());
+			}
+			if (((PromiseMessage)pmsg).isNack()){
 				if (nackcount.incrementAndGet() >= expectedResponses)
 					condition.signal();
 			}
@@ -134,12 +149,48 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 //			condition.signal();
 	}
 	
+	@Override
+	public void response(IPaxosMessage pmsg, Message msg){
+		if (pmsg instanceof PromiseMessage){
+			if (pmsg.getProposalNumber()>this.promisedProposalNumber){
+				this.promisedProposalNumber=pmsg.getProposalNumber();
+				this.uptodateEndpoints.clear();
+				if (pmsg.getInstanceNumber() == pmsg.getProposalNumber()){
+					this.uptodateEndpoints.add(msg.getFrom());
+				}
+				if (pmsg.getPaxosValue() != null)
+					this.acceptedPaxosValue=pmsg.getPaxosValue();
+			}
+			// this branch is only for current read up-to-date validation
+			else if (pmsg.getProposalNumber() == this.promisedProposalNumber){
+				if (pmsg.getInstanceNumber() == pmsg.getProposalNumber()){
+					this.uptodateEndpoints.add(msg.getFrom());
+				}
+			}
+			if (((PromiseMessage)pmsg).getTimestamp() > getTimestamp()){
+				setTimestamp(((PromiseMessage)pmsg).getTimestamp());
+			}
+			if (((PromiseMessage)pmsg).isNack()){
+				if (nackcount.incrementAndGet() >= expectedResponses)
+					condition.signal();
+			}
+			else {
+				if (responses.decrementAndGet() == 0)
+					condition.signal();
+			}
+		}
+	}
+	
 	public long getPromisedProposalNumber(){
 		return promisedProposalNumber;
 	}
 	
 	public IPaxosValue getAcceptedPaxosValue(){
 		return acceptedPaxosValue;
+	}
+	
+	public List<InetAddress> getUptodateEndpoints(){
+		return uptodateEndpoints;
 	}
 
 	public void response(Message m) {

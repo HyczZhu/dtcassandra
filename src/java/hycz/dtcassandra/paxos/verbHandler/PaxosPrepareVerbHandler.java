@@ -38,25 +38,50 @@ public class PaxosPrepareVerbHandler implements IVerbHandler{
 	
 		PrepareMessage prepareMessage;
 		try {
-			Thread.sleep(2000);
+//			try{
+//				Thread.sleep(2000);
+//			}catch (InterruptedException e) {
+//				// TODO Auto-generated catch block
+//				e.printStackTrace();
+//			}
 			prepareMessage = PrepareMessage.serializer().deserialize(new DataInputStream(body), message.getVersion());
 			
-			System.out.println("This is prepare(instanceNumber = "
-					+ prepareMessage.getInstanceNumber()
-					+ ", proposalNumber = "
-					+ prepareMessage.getProposalNumber() 
-					+ ")");
+//			System.out.println("This is prepare(instanceNumber = "
+//					+ prepareMessage.getInstanceNumber()
+//					+ ", proposalNumber = "
+//					+ prepareMessage.getProposalNumber() 
+//					+ ")");
 			logger_.debug("This is prepare(instanceNumber = "
 					+ prepareMessage.getInstanceNumber()
 					+ ", proposalNumber = "
 					+ prepareMessage.getProposalNumber() + ")");
 
+			// if instanceNum == -1, means this is a validate message
+			// which requires the current instance num and current timestamp
+			if (prepareMessage.getInstanceNumber() == -1){
+				long currentCommitNum = PaxosInstanceManager.getCurrentCommitNum(prepareMessage.getTableName(), prepareMessage.getRange());
+				long currentApplyNum = PaxosInstanceManager.getCurrentApplyNum(prepareMessage.getTableName(), prepareMessage.getRange());
+				long currentTimestamp = PaxosInstanceManager.getCurrentTimestamp(prepareMessage.getTableName(), prepareMessage.getRange());
+				PromiseMessage promiseMessage;
+				Message reply;
+				promiseMessage = new PromiseMessage(
+						false,
+						prepareMessage.getTableName(),
+						prepareMessage.getRange(),
+						currentApplyNum,
+						currentCommitNum,
+						null,
+						currentTimestamp);
+				reply = PromiseMessage.makePromiseMessage(message, promiseMessage);
+				MessagingService.instance().sendReply(reply, id, message.getFrom());
+				return;
+			}
 			
 			//main logic
 			if (ReplicationManager.instance().isAcceptorOrWitness(prepareMessage.getTableName(), prepareMessage.getRange())){
 //				PaxosInstanceManager.tryNewInstance(prepareMessage);
 //				PromiseResult result = PaxosInstanceManager.promiseInstance(prepareMessage);
-				PromiseResult result = PaxosInstanceManager.tryPromiseInstance(prepareMessage);
+				PromiseResult result = PaxosInstanceManager.tryPromiseInstance(prepareMessage);				
 				
 				PromiseMessage promiseMessage;
 				Message reply;
@@ -82,14 +107,15 @@ public class PaxosPrepareVerbHandler implements IVerbHandler{
 		    			}
 		            }
 		            
+		            long timestamp = SimpleAccess.getCurrentInstanceTimestamp(prepareMessage.getTableName(), prepareMessage.getRange());
 					promiseMessage = new PromiseMessage(
 							false,
 							prepareMessage.getTableName(),
 							prepareMessage.getRange(),
 							prepareMessage.getInstanceNumber(),
 							result.getPreviousProposalNumber(),
-							result.getAcceptedValue());
-	//						new StringPaxosValue("String Paxos Value 1"));
+							result.getAcceptedValue(),
+							timestamp);
 					logger_.debug("promise message made: (isNack = false, tableName = "
 							+ promiseMessage.getTableName()
 							+ ", range = "
@@ -126,8 +152,6 @@ public class PaxosPrepareVerbHandler implements IVerbHandler{
 			e.printStackTrace();
 //		} catch (NullPointerException e) {
 //			e.printStackTrace();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
 		}
 	}
 }

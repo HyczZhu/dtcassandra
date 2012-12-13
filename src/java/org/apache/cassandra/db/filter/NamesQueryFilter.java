@@ -36,6 +36,10 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.FBUtilities;
 
+/***
+ * 只是用来找出拥有这些名字的columns而已，不在乎column的类型
+ *
+ */
 public class NamesQueryFilter implements IFilter
 {
     public final SortedSet<ByteBuffer> columns;

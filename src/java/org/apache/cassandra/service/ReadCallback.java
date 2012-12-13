@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.service;
 
+import hycz.dtcassandra.transaction.NullRowResolver;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.List;
@@ -155,15 +157,24 @@ public class ReadCallback<T> implements IAsyncCallback
 
     public void response(ReadResponse result)
     {
-        ((RowDigestResolver) resolver).injectPreProcessed(result);
-        int n = waitingFor(result)
-              ? received.incrementAndGet()
-              : received.get();
-        if (n >= blockfor && resolver.isDataPresent())
+    	if (resolver instanceof RowDigestResolver)
         {
-            condition.signal();
-            maybeResolveForRepair();
+	        ((RowDigestResolver) resolver).injectPreProcessed(result);
+	        int n = waitingFor(result)
+	              ? received.incrementAndGet()
+	              : received.get();
+	        if (n >= blockfor && resolver.isDataPresent())
+	        {
+	            condition.signal();
+	            maybeResolveForRepair();
+	        }
         }
+    	else if (resolver instanceof NullRowResolver){
+    		((NullRowResolver) resolver).injectPreProcessed(result);
+    		if (received.incrementAndGet() >= blockfor){
+    			condition.signal();
+    		}
+    	}
     }
 
     /**

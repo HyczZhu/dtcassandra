@@ -14,8 +14,11 @@ public interface IPaxosValue {
 	Table getTable();
 	String getTableName();
 	Range getRange();
-
 	Object getValue();
+	void setTimestamp(long timestamp);
+	long getTimestamp();
+	
+	void apply() throws IOException;
 	
 	byte[] toBytes();
 //	IPaxosValue fromBytes(byte[] bytes) throws IOException;

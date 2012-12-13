@@ -30,7 +30,11 @@ public class PaxosPromiseVerbHandler implements IVerbHandler{
 
 		PromiseMessage promiseMessage;
 		try {
-			Thread.sleep(2000);
+//			try{
+//				Thread.sleep(2000);
+//			}catch (InterruptedException e) {
+//				e.printStackTrace();
+//			}
 			promiseMessage = PromiseMessage.serializer().deserialize(new DataInputStream(body), message.getVersion());
 			
 			logger_.debug("This is promise(instanceNumber = "+promiseMessage.getInstanceNumber()+", proposalNumber = "+promiseMessage.getProposalNumber()+", value = "+promiseMessage.getPaxosValue());
@@ -49,12 +53,10 @@ public class PaxosPromiseVerbHandler implements IVerbHandler{
 	        if (cb instanceof PrepareResponseHandler){
 	            if (logger_.isDebugEnabled())
 	                logger_.debug("Processing response on a callback from " + id + "@" + message.getFrom());
-	            ((PrepareResponseHandler) cb).response(promiseMessage);
+	            ((PrepareResponseHandler) cb).response(promiseMessage, message);
 	        }
 		} catch (IOException e) {
 			System.out.println("an IOException is thrown.");
-			e.printStackTrace();
-		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
 	}

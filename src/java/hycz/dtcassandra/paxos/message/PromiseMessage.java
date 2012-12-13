@@ -51,8 +51,9 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 	// if paxosValue == null, then this is a no-op value
 	private boolean hasValue;
 	private IPaxosValue paxosValue;
+	private long timestamp;
 	
-	public PromiseMessage(boolean isNack, String tableName, Range range, long instanceNumber, long proposalNumber, IPaxosValue paxosValue){
+	public PromiseMessage(boolean isNack, String tableName, Range range, long instanceNumber, long proposalNumber, IPaxosValue paxosValue, long timestamp){
 		this.isNack=isNack;
 		this.tableName=tableName;
 		this.range=range;
@@ -61,6 +62,7 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 		if (paxosValue == null) hasValue = false;
 		else hasValue = true;
 		this.paxosValue=paxosValue;
+		this.timestamp = timestamp;
 	}
 	
 	public static Message makePromiseMessage(Message message, PromiseMessage promiseMessage){
@@ -81,7 +83,8 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 			prepareMessage.getRange(),
 			prepareMessage.getInstanceNumber(),
 			promisedNum,
-			null);
+			null,
+			-1L);
 		ByteArrayOutputStream bos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(bos);
         try {
@@ -139,6 +142,10 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 	public IPaxosValue getPaxosValue(){
 		return paxosValue;
 	}
+	
+	public long getTimestamp(){
+		return timestamp;
+	}
 
 	public String toString() {
 		return "PromiseMessage(isNack=" + isNack 
@@ -158,7 +165,8 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 		 *     Range: range
 		 *     long: instanceNumber
 		 *     long: proposalNumber
-		 *     IPaxosValue : paxosValue 
+		 *     IPaxosValue : paxosValue
+		 *     long: timestamp
 		 */
 		public void serialize(PromiseMessage pm, DataOutputStream dos, int version) throws IOException {
 			
@@ -172,7 +180,8 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 				//need to change to other type
 //				StringPaxosValue.serializer().serialize(pm.getPaxosValue(), dos);
 				PaxosValueFactory.serializer().serialize(pm.getPaxosValue(), dos, version);
-			}				
+			}
+			dos.writeLong(pm.getTimestamp());
 		}
 
 		public PromiseMessage deserialize(DataInputStream dis, int version) throws IOException {
@@ -187,8 +196,9 @@ private static ICompactSerializer<PromiseMessage> serializer_ ;
 			if (hasValue)
 //				paxosValue=StringPaxosValue.serializer().deserialize(dis);
 				paxosValue = PaxosValueFactory.serializer().deserialize(dis, version);
+			long timestamp = dis.readLong();
 			
-			return new PromiseMessage(isNack, tableName, range, instanceNumber, proposalNumber, paxosValue);
+			return new PromiseMessage(isNack, tableName, range, instanceNumber, proposalNumber, paxosValue, timestamp);
 		}
 	}
 

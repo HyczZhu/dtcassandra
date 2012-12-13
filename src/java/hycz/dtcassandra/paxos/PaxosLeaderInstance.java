@@ -8,6 +8,7 @@ import hycz.dtcassandra.paxos.callback.PrepareResponseHandler;
 import hycz.dtcassandra.paxos.message.AcceptMessage;
 import hycz.dtcassandra.paxos.message.DeliverMessage;
 import hycz.dtcassandra.paxos.message.PrepareMessage;
+import hycz.dtcassandra.transaction.NWRLevel;
 import hycz.dtcassandra.transaction.replication.ReplicationManager;
 
 import java.io.IOException;
@@ -48,6 +49,8 @@ public class PaxosLeaderInstance {
 	private IPaxosValue paxosValue;
 	private String state;
 	
+	private long timestamp;
+	
 //	private IPaxosValue paxosValueAfterPhase1;
 //	private Long proposalNumberAfterPhase1;
 //	private Set<InetAddress> promiseRecieved;
@@ -70,7 +73,8 @@ public class PaxosLeaderInstance {
 			this.proposalNum = new AtomicLong(0L);
 			this.paxosValue = null;
 		}
-		state = PaxosState.Pending;
+		state = existed.getState();
+		this.timestamp = -1L;
 	}
 	
 	/***
@@ -115,10 +119,14 @@ public class PaxosLeaderInstance {
 		
 		//1, set prepare callback
 		IPaxosResponseHandler prepareResponseHandler = 
-			createPrepareResponseHandler(acceptorEndpoints, witnessAcceptorEndpoints, ConsistencyLevel.QUORUM);
+			createPrepareResponseHandler(
+					acceptorEndpoints, 
+					witnessAcceptorEndpoints, 
+					ConsistencyLevel.QUORUM);
 		//2, make prepare message
 		PrepareMessage preparemessage = new PrepareMessage(
 				tableName, range, getInstanceNumber(), getProposalNumber());
+//		System.out.println(preparemessage);
 		//3, send messages
 		for (Map.Entry<InetAddress, Collection<InetAddress>> entry : witnessAcceptorEndpoints.asMap().entrySet()){
 			InetAddress destination = entry.getKey();
@@ -154,7 +162,15 @@ public class PaxosLeaderInstance {
 		
 		//4, wait for prepare response
 		PaxosResponseType prepareResult=prepareResponseHandler.get();
+		
+		setPaxosValue(((PrepareResponseHandler)prepareResponseHandler).getAcceptedPaxosValue());
+		timestamp = ((PrepareResponseHandler)prepareResponseHandler).getTimestamp();
+		
 		return prepareResult;
+	}
+	
+	public void moveToNoopAcceptPhase(){
+		this.paxosValue = null;
 	}
 	
 	//should be called after responseHandler.get()
@@ -188,22 +204,43 @@ public class PaxosLeaderInstance {
 			witnessAcceptorEndpoints.put(entry.getValue(), entry.getKey());
 		}
 		
+//		ConsistencyLevel cl;
+//		if (NWRLevel)
+		if (!noop && !(getPaxosValue() != null || value != null)) return PaxosResponseType.Error;
+		if (noop) 
+			moveToNoopAcceptPhase();
+		else
+			moveToAcceptPhase(value);
+		if (!noop){
+			long timestamp = System.currentTimeMillis();
+			//this.timestamp is either -1 or the highest timestamp got from phase 1
+			while (timestamp < this.timestamp){
+				++timestamp;
+			}
+			this.timestamp = timestamp;
+			this.paxosValue.setTimestamp(this.timestamp);
+		}
 		//1, set accept callback
-		IPaxosResponseHandler acceptResponseHandler = 
+		IPaxosResponseHandler acceptResponseHandler = noop ?
 			createAcceptResponseHandler(
 					acceptorEndpoints, 
 					witnessAcceptorEndpoints, 
-					ConsistencyLevel.ALL);
+					ConsistencyLevel.ALL)
+			:
+			createAcceptResponseHandler(
+					acceptorEndpoints, 
+					witnessAcceptorEndpoints, 
+					ConsistencyLevel.QUORUM)
+					;
 		//2, find out which value to accept
-		if (!noop && !(getPaxosValue() != null || value != null)) return PaxosResponseType.Error;
-		if (noop) value = null;
-		moveToAcceptPhase(value);
+		
 //		logger.debug("instance "+instance.instanceNumber +" 's value is set to "+instance.paxosValue.getValue());
 		//already done in responseHandler.get()
-		
+					
+//		System.out.println("timestamp is set to "+ this.paxosValue.getTimestamp());
 		//3, make accept message
 		AcceptMessage acceptMessage = new AcceptMessage(tableName, range, getInstanceNumber(), getProposalNumber(), getPaxosValue());
-		System.out.println(acceptMessage);
+//		System.out.println(acceptMessage);
 		
 		//4, send message
 		for (Map.Entry<InetAddress, Collection<InetAddress>> entry : witnessAcceptorEndpoints.asMap().entrySet()) {
@@ -241,6 +278,7 @@ public class PaxosLeaderInstance {
 		
 		//5, wait for accept response
 		PaxosResponseType acceptResult = acceptResponseHandler.get();
+//		this.paxosValue = ((AcceptResponseHandler)acceptResponseHandler).getAcceptedValue();
 		return acceptResult;
 	}
 	
@@ -270,7 +308,7 @@ public class PaxosLeaderInstance {
 		
 		//3, make deliver message
 		DeliverMessage deliverMessage = new DeliverMessage(tableName, range, getInstanceNumber(), getProposalNumber(), getPaxosValue());
-		System.out.println(deliverMessage);
+//		System.out.println(deliverMessage);
 		
 		//4, send message
 		//TODO may use HINT
@@ -340,7 +378,7 @@ public class PaxosLeaderInstance {
 			ConsistencyLevel consistency_level) {
 		synchronized (this){
 			acceptResponseHandler = AcceptResponseHandler.create(tableName, range, instanceNum, acceptorEndpoints,
-					witnessAcceptorEndpoints, consistency_level);
+					witnessAcceptorEndpoints, consistency_level, this.paxosValue);
 			return acceptResponseHandler;
 		}
 	}
@@ -372,7 +410,7 @@ public class PaxosLeaderInstance {
 	}
 	
 	public IPaxosValue getPaxosValue(){
-		return paxosValue;
+		return this.paxosValue;
 	}
 	
 	public Long getInstanceNumber(){

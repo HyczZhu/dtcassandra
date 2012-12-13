@@ -89,7 +89,7 @@ public class PaxosLeaderInstanceManager {
 		long currentInstanceNum = SimpleAccess.getCurrentInstanceNum(tableName, range);
 		System.out.println("table = " + tableName + " range = " + range + " currentInstanceNum = " + currentInstanceNum);
 		if (currentInstanceNum <= -1){
-			instanceNumberGen = new AtomicLong(0);
+			instanceNumberGen = new AtomicLong(-1);
 		}
 		else {
 			instanceNumberGen = new AtomicLong(currentInstanceNum);
@@ -111,11 +111,13 @@ public class PaxosLeaderInstanceManager {
 				
 				if (prepareResult == PaxosResponseType.Timeout){
 					logger.debug("prepare result: Timeout");
+					System.out.println("prepare result: Timeout");
 					instance.increaseProposalNumber();
 					continue;
 				}
 				else if (prepareResult==PaxosResponseType.Nack){
 					logger.debug("prepare result: Nack");
+					System.out.println("prepare result: Nack");
 					try {
 						while (instance.getProposalNumber() < instance.getPrepareResponseHandler().getPromisedProposalNumber()){
 							instance.increaseProposalNumber();
@@ -127,6 +129,7 @@ public class PaxosLeaderInstanceManager {
 				}
 				else if (prepareResult==PaxosResponseType.Quorum){
 					logger.debug("prepare result: Quorum");
+					System.out.println("prepare result: Quorum");
 					break;
 				}
 			}
@@ -134,63 +137,79 @@ public class PaxosLeaderInstanceManager {
 			if (instance.getPaxosValue() == null) {
 				return instance;
 			}
-			// if get a non-empty instance, recover it and try to get a new empty instance
+			/***
+			 *  If get a non-empty instance, continue it and try to get a new empty instance.
+			 *  Leader will call this method only when it thinks all the existed instances are closed.
+			 *  So this means some other leader is also proposing some value and this local leader 
+			 *  already disturbed that instance. 
+			 *  The only thing this local leader should do is to continue this instance, 
+			 *  and this leader confliction will cause the old leader to give up.
+			 */ 
 			else {
 				//3, recover this instance
-				Runnable recover = new Runnable() {
-					long num = instance.getInstanceNumber();
-					public void run() {
-						System.out.println("trying to recover instance " + num);
-						try {
-							PaxosResponseType acceptResult = instance.executePhaseTwo();
-							if (acceptResult == PaxosResponseType.Quorum){
-								logger.debug("recover : accept result: Quorum");
-							}
-							else if (acceptResult == PaxosResponseType.Timeout){
-								logger.debug("recover : accept result: Timeout");
-								isSteady = false;
-								// accept fail, try to execute phase one to make this replica leader
-								while (true){
-									PaxosResponseType prepareResult = instance.executePhaseOne();
-									if (prepareResult == PaxosResponseType.Timeout){
-										logger.debug("recover : prepare result: Timeout");
-										instance.increaseProposalNumber();
-										continue;
-									}
-									else if (prepareResult==PaxosResponseType.Nack){
-										logger.debug("recover : prepare result: Nack");
-										try {
-											while (instance.getProposalNumber() < instance.getPrepareResponseHandler().getPromisedProposalNumber()){
-												instance.increaseProposalNumber();
-											}
-										} catch(NullPointerException e){
-											e.printStackTrace();
-										}
-										continue;
-									}
-									else if (prepareResult==PaxosResponseType.Quorum){
-										logger.debug("recover : prepare result: Quorum");
-										
-										acceptResult = instance.executePhaseTwo();
-										if (acceptResult == PaxosResponseType.Quorum){
-											break;
-										}
-										else if (acceptResult == PaxosResponseType.Timeout){
-											continue;
-										}
-									}
-								}								
-							}
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
+//				Runnable recover = new Runnable() {
+				long num = instance.getInstanceNumber();
+//					public void run() {
+				System.out.println("trying to recover instance " + num);
+				try {
+					PaxosResponseType acceptResult = instance.executePhaseTwo();
+					if (acceptResult == PaxosResponseType.Quorum){
+						logger.debug("recover : accept result: Quorum");
 					}
-				};
-				StageManager.getStage(Stage.PAXOS_LEADER).execute(recover);
-				
-				//4, try to get a new empty instance
-				return getNextEmptyLeaderInstance();
+					else if (acceptResult == PaxosResponseType.Timeout){
+						logger.debug("recover : accept result: Timeout");
+						
+						// accept fail, try to execute phase one to make this replica leader
+						while (true){
+							isSteady = false;
+//							acceptResult = instance.executePhaseTwo();
+//							if (acceptResult == PaxosResponseType.Quorum){
+//								break;
+//							}
+//							else if (acceptResult == PaxosResponseType.Timeout){
+//								continue;
+//							}
+						
+							PaxosResponseType prepareResult = instance.executePhaseOne();
+							if (prepareResult == PaxosResponseType.Timeout){
+								logger.debug("recover : prepare result: Timeout");
+								instance.increaseProposalNumber();
+								continue;
+							}
+							else if (prepareResult==PaxosResponseType.Nack){
+								logger.debug("recover : prepare result: Nack");
+								try {
+									while (instance.getProposalNumber() < instance.getPrepareResponseHandler().getPromisedProposalNumber()){
+										instance.increaseProposalNumber();
+									}
+								} catch(NullPointerException e){
+									e.printStackTrace();
+								}
+								continue;
+							}
+							else if (prepareResult==PaxosResponseType.Quorum){
+								logger.debug("recover : prepare result: Quorum");
+								
+								acceptResult = instance.executePhaseTwo();
+								if (acceptResult == PaxosResponseType.Quorum){
+									break;
+								}
+								else if (acceptResult == PaxosResponseType.Timeout){
+									continue;
+								}
+							}
+						}								
+					}
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			}
+//				};
+//				StageManager.getStage(Stage.PAXOS_LEADER).execute(recover);
+				
+			//4, try to get a new empty instance
+			return getNextEmptyLeaderInstance();
+//			}
 		}
 		// if steady, then skip phase 1
 		else {
@@ -212,10 +231,12 @@ public class PaxosLeaderInstanceManager {
 					PaxosResponseType acceptResult = empty.executePhaseTwo();
 					if (acceptResult == PaxosResponseType.Quorum){
 						logger.debug("accept result: Quorum");
+						System.out.println("accept result: Quorum");
 						isSteady = true;
 					}
 					else if (acceptResult == PaxosResponseType.Timeout){
 						logger.debug("accept result: Timeout");
+						System.out.println("accept result: Timeout");
 						isSteady = false;
 						boolean getResult = false;
 						// accept fail, try to execute phase one to make this replica leader
@@ -223,11 +244,13 @@ public class PaxosLeaderInstanceManager {
 							PaxosResponseType prepareResult = empty.executePhaseOne();
 							if (prepareResult == PaxosResponseType.Timeout){
 								logger.debug("prepare result: Timeout");
+								System.out.println("prepare result: Timeout");
 								empty.increaseProposalNumber();
 								continue;
 							}
 							else if (prepareResult==PaxosResponseType.Nack){
 								logger.debug("prepare result: Nack");
+								System.out.println("prepare result: Nack");
 								try {
 									while (empty.getProposalNumber() < empty.getPrepareResponseHandler().getPromisedProposalNumber()){
 										empty.increaseProposalNumber();
@@ -239,12 +262,19 @@ public class PaxosLeaderInstanceManager {
 							}
 							else if (prepareResult==PaxosResponseType.Quorum){
 								logger.debug("prepare result: Quorum");
-								
+								System.out.println("prepare result: Quorum");
 								acceptResult = empty.executePhaseTwo();
 								if (acceptResult == PaxosResponseType.Quorum){
-									// try to deliver this value
-									getResult = true;
-									break;
+									//executed an instance with an existed value
+									if (!value.equals(empty.getPaxosValue())){	
+										getResult = false;
+										break;
+									}
+									//success
+									else {
+										getResult = true;
+										break;
+									}
 								}
 								else if (acceptResult == PaxosResponseType.Timeout){
 									continue;
@@ -257,8 +287,9 @@ public class PaxosLeaderInstanceManager {
 						}
 						if (!getResult){
 							continue;
-						}
+						}						
 					}
+					System.out.println("timestamp of instance " + empty.getInstanceNumber() + " = " + empty.getPaxosValue().getTimestamp());
 					break;
 				}
 				else {
@@ -288,6 +319,66 @@ public class PaxosLeaderInstanceManager {
 		}
 		return false;		
 	}
+	
+	/***
+	 * the commit point is that a majority of acceptors has accepted a value
+	 * so, we find out this value.
+	 * if this value exists, we deliver it,
+	 * if not, we deliver no-op value
+	 * @param instanceNum
+	 * @return true if successfully delivered some value locally, false if timeout
+	 */
+	public boolean recoverWithNoop(long instanceNum){
+		final PaxosLeaderInstance instance = getAndCreateLeaderInstance(instanceNum);
+		
+		//1, check if this instance reach consensus before
+		PaxosResponseType acceptResult;
+		try {
+			acceptResult = instance.executePhaseTwoWithNoOp();
+			System.out.println("get value for instance " + instanceNum + " using no-op phase 2 : " 
+					+ (instance.getAcceptResponseHandler().getAcceptedValue()==null?null:instance.getAcceptResponseHandler().getAcceptedValue().getValue()));
+		
+			//2, if so, deliver the consensus value
+			if (acceptResult == PaxosResponseType.Quorum){
+				logger.debug("recover : a value is chosen by no-op phase 2");
+				System.out.println("recover : a value is chosen by no-op phase 2");
+				Runnable deliverAndApply = new Runnable(){
+					public void run(){
+						instance.setPaxosValue(instance.getAcceptResponseHandler().getAcceptedValue());
+						try {
+							instance.deliverValue(ConsistencyLevel.ONE);
+						} catch (IOException e) {
+							e.printStackTrace();
+						}	
+					}
+				};
+				StageManager.getStage(Stage.PAXOS_DELIVER).execute(deliverAndApply);
+				return PaxosInstanceManager.deliverInstance(tableName, range, instanceNum, instance.getAcceptResponseHandler().getAcceptedValue());
+			}
+			//3, if not, deliver noop value
+			else if (acceptResult == PaxosResponseType.NoConsensus){
+				logger.debug("recover : no consensus is reached, deliver no-op");
+				System.out.println("recover : no consensus is reached, deliver no-op");
+				Runnable deliverAndApply = new Runnable(){
+					public void run(){
+						try {
+							instance.deliverValueWithNoOp(ConsistencyLevel.ANY);
+						} catch (IOException e) {
+							e.printStackTrace();
+						}	
+					}
+				};
+				StageManager.getStage(Stage.PAXOS_DELIVER).execute(deliverAndApply);
+				return PaxosInstanceManager.deliverInstance(tableName, range, instanceNum, null);
+			}
+			else if (acceptResult == PaxosResponseType.Timeout){
+				return false;
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return false;
+	}		
 	
 	private PaxosLeaderInstance getAndCreateLeaderInstance(Long instanceNum){
 		PaxosLeaderInstance instance = getLeaderInstance(instanceNum);

@@ -22,6 +22,8 @@ import org.apache.cassandra.thrift.UnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import sun.nio.ch.SocketOpts.IP;
+
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 
@@ -48,7 +50,8 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 			long instanceNumber,
 			Collection<InetAddress> acceptorEndpoints,
 			Multimap<InetAddress, InetAddress> witnessAcceptorEndpoints,
-			ConsistencyLevel consistencyLevel) {
+			ConsistencyLevel consistencyLevel,
+			IPaxosValue expectedValue) {
 		super(tableName,range,instanceNumber, acceptorEndpoints, witnessAcceptorEndpoints,
 				consistencyLevel);
 		// responses = new AtomicInteger(determineBlockFor(table));
@@ -59,11 +62,11 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 		nackcount = new AtomicInteger(0);
 		promisedProposalNumber = -1;
 		responseValues = new HashMap<IPaxosValue, AtomicInteger>();
-		expectedValue = null;
+		this.expectedValue = expectedValue;
 		acceptedValue = null;
 	}
 
-	protected AcceptResponseHandler(String tableName, Range range, long instanceNumber, InetAddress endpoint) {
+	protected AcceptResponseHandler(String tableName, Range range, long instanceNumber, InetAddress endpoint, IPaxosValue expectedValue) {
 		super(tableName,range,instanceNumber, Arrays.asList(endpoint), ImmutableMultimap
 				.<InetAddress, InetAddress> builder().put(endpoint, endpoint)
 				.build(), ConsistencyLevel.ALL);
@@ -74,7 +77,7 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 		nackcount = new AtomicInteger(0);
 		promisedProposalNumber = -1;
 		responseValues = new HashMap<IPaxosValue, AtomicInteger>();
-		expectedValue = null;
+		this.expectedValue = expectedValue;
 		acceptedValue = null;
 	}
 
@@ -84,25 +87,26 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 			long instanceNumber,
 			Collection<InetAddress> acceptorEndpoints,
 			Multimap<InetAddress, InetAddress> witnessAcceptorEndpoints,
-			ConsistencyLevel consistencyLevel) {
+			ConsistencyLevel consistencyLevel,
+			IPaxosValue expectedValue) {
 		return new AcceptResponseHandler(tableName,range,instanceNumber, acceptorEndpoints, witnessAcceptorEndpoints,
-				consistencyLevel);
+				consistencyLevel, expectedValue);
 	}
 
 	public static AcceptResponseHandler create(String tableName,
-			Range range, long instanceNumber, InetAddress endpoint) {
-		return new AcceptResponseHandler(tableName,range,instanceNumber, endpoint);
+			Range range, long instanceNumber, InetAddress endpoint, IPaxosValue expectedValue) {
+		return new AcceptResponseHandler(tableName,range,instanceNumber, endpoint, expectedValue);
 	}
 	
 	@Override
-	public void response(IPaxosMessage msg) {
-		if (msg instanceof AcceptedMessage){
-			if (((AcceptedMessage)msg).isNack()){
+	public void response(IPaxosMessage pmsg) {
+		if (pmsg instanceof AcceptedMessage){
+			if (((AcceptedMessage)pmsg).isNack()){
 				if (nackcount.incrementAndGet() >= expectedResponses)
 					condition.signal();
 			}
 			else{
-				IPaxosValue value = msg.getPaxosValue();
+				IPaxosValue value = pmsg.getPaxosValue();
 				// normal paxos phase 2
 				if (expectedValue != null && value != null) {
 					if (expectedValue.equals(value)){
@@ -111,7 +115,7 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 					}
 				}
 				// no-op value phase 2, consistency level should be all
-				// need to recieve all responses, or any value got more than half of all responses
+				// need to receive all responses, or any value got more than half of all responses
 				else {
 					if (responseValues.get(value) != null){
 						if (responseValues.get(value).incrementAndGet() >= expectedResponses)
@@ -132,6 +136,10 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 				
 			}
 		}
+	}
+	
+	@Override
+	public void response(IPaxosMessage pmsg, Message message) {
 	}
 
 	public void response(Message m) {
@@ -163,7 +171,7 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 		
 		// normal paxos phase 2
 		if (expectedValue != null){
-			System.out.println("AcceptResponseHandler : Quorum");
+//			System.out.println("AcceptResponseHandler : Quorum");
 			return PaxosResponseType.Quorum;
 		}
 		// no-op phase 2
@@ -174,8 +182,13 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 					return PaxosResponseType.Quorum;
 				}
 			}
+			this.acceptedValue = null;
 			return PaxosResponseType.NoConsensus;
 		}
+	}
+	
+	public IPaxosValue getAcceptedValue(){
+		return this.acceptedValue;
 	}
 
 	protected int determineConsistency() {
