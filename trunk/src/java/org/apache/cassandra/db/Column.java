@@ -48,9 +48,9 @@ public class Column implements IColumn
         return new ColumnSerializer();
     }
 
-    protected final ByteBuffer name;
+    protected ByteBuffer name;
     protected final ByteBuffer value;
-    protected final long timestamp;
+    protected long timestamp;
 
     Column(ByteBuffer name)
     {
@@ -90,6 +90,14 @@ public class Column implements IColumn
     public Collection<IColumn> getSubColumns()
     {
         throw new UnsupportedOperationException("This operation is unsupported on simple columns.");
+    }
+    
+    public void setName(ByteBuffer name){
+    	this.name = name;
+    }
+    
+    public void setTimtstamp(long timestamp){
+    	this.timestamp = timestamp;
     }
 
     public long timestamp()

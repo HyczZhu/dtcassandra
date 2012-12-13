@@ -1,6 +1,7 @@
 package hycz.dtcassandra.paxos.storage;
 
 import hycz.dtcassandra.paxos.IPaxosValue;
+import hycz.dtcassandra.paxos.MultiRMPaxosValue;
 import hycz.dtcassandra.paxos.PaxosInstance;
 import hycz.dtcassandra.paxos.PaxosState;
 import hycz.dtcassandra.paxos.PaxosValueFactory;
@@ -15,10 +16,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -78,13 +83,18 @@ public class SimpleAccess {
 	public final static String TABLE = "instanceSlot";
 	public final static String CF_RANGE_pre = "range";
 	public final static String SC_CURRENT = "current";
-	public final static String C_CURRENT = "instanceNum";
+	public final static String C_CRT_INSTANCENUM = "instanceNum";
+	public final static String C_CRT_TIMESTAMP = "timestamp";
+	public final static String C_CRT_COMMIT = "commitNum";
+	public final static String C_CRT_APPLY = "applyNum";
+	public final static String C_CRT_ACCEPTED = "acceptedNum";
 	public final static String SC_INSTANCE_pre = "instance";
 	public final static String C_STATE = "state";
 	public final static String C_PROPOSALNUM = "proposalNum";
 	public final static String C_ACCEPTEDVALUE = "acceptedValue";
 	public final static String C_CHOSENVALUE = "chosenValue";
 	public final static String C_VALUETYPE = "valueType";
+	public final static String C_TIMESTAMP = "timestamp";
 	@Deprecated
 	public final static String COLUMNPREFIX = "Instance";
 	public final static String TESTTABLE = "TestTable";
@@ -100,12 +110,27 @@ public class SimpleAccess {
 	public static PaxosInstance getInstance(String tableName, Range range, long instanceNumber){
 		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
 				CF_RANGE_pre+range);
+//		TreeSet<ByteBuffer> scs = new TreeSet<ByteBuffer>();
+//		scs.add(ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber));
+//		scs.add(ByteBufferUtil.bytes(SC_CURRENT));
+
 		ColumnFamily cfam = store.getColumnFamily(QueryFilter.getNamesFilter(
 				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
 				ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber)));
 		if (cfam == null) return null;
 //		cfam = cfam.cloneMe();
 		IColumn col=null;
+//		long timestamp = -1L;
+//		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_CURRENT))) != null){
+//			if (col instanceof SuperColumn) {
+//				SuperColumn sc = (SuperColumn) col;
+//				//get timestamp of this instance
+//				IColumn c_timestamp = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_TIMESTAMP));
+//				c_timestamp.value().position(0);
+//				timestamp = c_timestamp.value().getLong();
+//				c_timestamp.value().position(0);
+//			}
+//		}
 		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber))) != null) {
 			if (col instanceof SuperColumn) {
 				SuperColumn sc = (SuperColumn) col;
@@ -115,19 +140,29 @@ public class SimpleAccess {
 //						IColumn c = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.COLUMNPREFIX));
 //						System.out.println("get value:" + StringPaxosValue.fromBytes(c.value().array()).getValue());
 //						return (SuperColumn)col;
-					/////////////
+					//get proposal num
 					IColumn c_proposalNum = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_PROPOSALNUM));
 					long proposalNum = c_proposalNum.value().getLong();
 					c_proposalNum.value().position(0);
+					
+					//get paxos value
 					IPaxosValue value = null;
 					IColumn c_valuetype = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_VALUETYPE));
 					IColumn c_value = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_ACCEPTEDVALUE));
 					if (c_valuetype != null && c_value != null){
+//						try {
+//							System.out.println();
+//							System.out.println(MultiRMPaxosValue.fromBytes(c_value.value().array(), version).getValue());
+//							System.out.println(new String(c_valuetype.value().array()));
+//							System.out.println();
+//						} catch (IOException e) {
+//							e.printStackTrace();
+//						}
 						value = PaxosValueFactory.getPaxosValue(
 								c_value.value().array(), 
 								new String(c_valuetype.value().array()));
 					}
-					
+					//get state
 					String state = null;
 					IColumn c_state = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_STATE));
 					try {
@@ -136,6 +171,7 @@ public class SimpleAccess {
 						e.printStackTrace();
 					}
 					if (state == PaxosState.Delivered){
+						//get chosen value
 						IPaxosValue chosenValue = null;
 						IColumn c_chosenValue = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CHOSENVALUE));
 						if (c_valuetype != null && c_chosenValue != null){
@@ -170,8 +206,15 @@ public class SimpleAccess {
 		
 		ByteBuffer state = ByteBufferUtil.bytes(PaxosState.Pending);
 		ByteBuffer proposalNum = ByteBufferUtil.bytes(new Long(-1).longValue());
-		//TODO more valuetype support
-		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.VALUETYPE_ROWMUTATION);
+		// set default value type to 
+		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.VALUETYPE_MULTIRM);
+		
+//		long timestamp = System.currentTimeMillis();
+//		while (timestamp < getCurrentInstanceTimestamp(tableName, range)){
+//			++timestamp;
+//		}
+		
+		ByteBuffer timestamp_bytes = ByteBufferUtil.bytes(-1L);
 		
 		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), state, System.currentTimeMillis());
 		Column c2=new Column(ByteBufferUtil.bytes(C_PROPOSALNUM), proposalNum, System.currentTimeMillis());
@@ -182,6 +225,11 @@ public class SimpleAccess {
 		sc.addColumn(c2);
 		sc.addColumn(c4);
 		cf.addColumn(sc);
+//		Column c6=new Column(ByteBufferUtil.bytes(C_TIMESTAMP), timestamp_bytes, System.currentTimeMillis());
+//		SuperColumn sc2=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
+//		sc2.addColumn(c6);
+//		cf.addColumn(sc2);
+
 		rm.add(cf);
 		
 		// 2, apply it
@@ -223,6 +271,7 @@ public class SimpleAccess {
 		applyRM(rm);
 	}
 	
+	@Deprecated
 	public static void updateValue(String tableName, Range range, long instanceNumber, long proposalNum, IPaxosValue value){
 		if (value == null) return;
 		// 1, make a rowmutation
@@ -245,8 +294,15 @@ public class SimpleAccess {
 		applyRM(rm);
 	}
 	
-	public static void closeWithValue(String tableName, Range range, long instanceNumber, long proposalNum, IPaxosValue value){
-		if (value == null) return;
+	/***
+	 * accept a value, and change the instance state to Accepted
+	 * @param tableName
+	 * @param range
+	 * @param instanceNumber
+	 * @param proposalNum
+	 * @param value
+	 */
+	public static void acceptValue(String tableName, Range range, long instanceNumber, long proposalNum, IPaxosValue value){
 		// 1, make a rowmutation
 		DecoratedKey dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
@@ -254,14 +310,16 @@ public class SimpleAccess {
 		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.getValueType(value));
 		
 		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber), BytesType.instance);
-		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), ByteBufferUtil.bytes(PaxosState.Closed), System.currentTimeMillis());
+		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), ByteBufferUtil.bytes(PaxosState.Accepted), System.currentTimeMillis());
 		Column c2=new Column(ByteBufferUtil.bytes(C_PROPOSALNUM), ByteBufferUtil.bytes(proposalNum), System.currentTimeMillis());
-		Column c3=new Column(ByteBufferUtil.bytes(C_ACCEPTEDVALUE), ByteBuffer.wrap(value.toBytes()), System.currentTimeMillis());
-		Column c4=new Column(ByteBufferUtil.bytes(C_VALUETYPE), valueType, System.currentTimeMillis());
 		sc.addColumn(c1);
 		sc.addColumn(c2);
-		sc.addColumn(c3);
-		sc.addColumn(c4);
+		if (value != null){
+			Column c3=new Column(ByteBufferUtil.bytes(C_ACCEPTEDVALUE), ByteBuffer.wrap(value.toBytes()), System.currentTimeMillis());
+			Column c4=new Column(ByteBufferUtil.bytes(C_VALUETYPE), valueType, System.currentTimeMillis());
+			sc.addColumn(c3);
+			sc.addColumn(c4);
+		}
 		cf.addColumn(sc);
 		rm.add(cf);
 		
@@ -269,6 +327,12 @@ public class SimpleAccess {
 		applyRM(rm);
 	}
 	
+	/***
+	 * deliver an no-op value, and change the instance state to Hole
+	 * @param tableName
+	 * @param range
+	 * @param instanceNumber
+	 */
 	public static void deliverNoOpValue(String tableName, Range range, long instanceNumber){
 		// 1, make a rowmutation
 		DecoratedKey dk = Util.dk(tableName);
@@ -286,6 +350,13 @@ public class SimpleAccess {
 		applyRM(rm);
 	}
 	
+	/***
+	 * deliver a value, and change the instance state to Delivered
+	 * @param tableName
+	 * @param range
+	 * @param instanceNumber
+	 * @param value
+	 */
 	public static void deliverValue(String tableName, Range range, long instanceNumber, IPaxosValue value){
 		// 1, make a rowmutation
 		DecoratedKey dk = Util.dk(tableName);
@@ -294,17 +365,24 @@ public class SimpleAccess {
 		
 		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber), BytesType.instance);
 		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), ByteBufferUtil.bytes(PaxosState.Delivered), System.currentTimeMillis());
-		Column c5=new Column(ByteBufferUtil.bytes(C_CHOSENVALUE), ByteBuffer.wrap(value.toBytes()), System.currentTimeMillis());
-		
+		Column c5=new Column(ByteBufferUtil.bytes(C_CHOSENVALUE), ByteBuffer.wrap(value.toBytes()), System.currentTimeMillis());	
 		sc.addColumn(c1);
 		sc.addColumn(c5);
 		cf.addColumn(sc);
+		
 		rm.add(cf);
 		
 		// 2, apply it
 		applyRM(rm);
+		
 	}
 	
+	//一些本地副本公共值
+	//1, 当前instance num
+	//2, 当前instance timestamp
+	//3, 当前最大已commit的instance num
+	//4, 当前最大已apply的instance num
+	//5, 当前最大已accept的instance num
 	public static long getCurrentInstanceNum(String tableName, Range range){
 		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
 				CF_RANGE_pre+range);
@@ -319,8 +397,9 @@ public class SimpleAccess {
 				SuperColumn sc = (SuperColumn) col;
 				
 				if (!col.isMarkedForDelete()){
-					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CURRENT));
+					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_INSTANCENUM));
 					if (c_current != null){
+						c_current.value().position(0);
 						return c_current.value().getLong();
 					}
 					return -1;
@@ -334,7 +413,6 @@ public class SimpleAccess {
 		}
 		return -1;
 	}
-	
 	public static void setCurrentInstanceNum(String tableName, Range range, long instanceNumber){
 		long existed = getCurrentInstanceNum(tableName, range);
 		if (existed >= instanceNumber)
@@ -346,7 +424,213 @@ public class SimpleAccess {
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
 		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
-		Column c=new Column(ByteBufferUtil.bytes(C_CURRENT), ByteBufferUtil.bytes(instanceNumber), System.currentTimeMillis());
+		Column c=new Column(ByteBufferUtil.bytes(C_CRT_INSTANCENUM), ByteBufferUtil.bytes(instanceNumber), System.currentTimeMillis());
+		sc.addColumn(c);
+		cf.addColumn(sc);
+		rm.add(cf);
+		
+		// 2, apply it
+		applyRM(rm);
+	}
+	
+	public static long getCurrentInstanceTimestamp(String tableName, Range range){
+		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
+				CF_RANGE_pre+range);
+		ColumnFamily cfam = store.getColumnFamily(QueryFilter.getNamesFilter(
+				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
+				ByteBufferUtil.bytes(SC_CURRENT)));
+		if (cfam == null) return -1;
+//		cfam = cfam.cloneMe();
+		IColumn col=null;
+		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_CURRENT))) != null) {
+			if (col instanceof SuperColumn) {
+				SuperColumn sc = (SuperColumn) col;
+				
+				if (!col.isMarkedForDelete()){
+					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_TIMESTAMP));
+					if (c_current != null){
+						c_current.value().position(0);
+						return c_current.value().getLong();
+					}
+					return -1;
+				}
+				else{
+					System.out.println("this column is marked for delete");
+					return -1;
+				}					
+			}
+			else return -1;
+		}
+		return -1;
+	}	
+	public static void setCurrentInstanceTimestamp(String tableName, Range range, long timestamp){
+		long existed = getCurrentInstanceTimestamp(tableName, range);
+		if (existed >= timestamp)
+			return;
+		
+		// 1, make a rowmutation
+		DecoratedKey dk = Util.dk(tableName);
+		RowMutation rm = new RowMutation(TABLE, dk.key);
+		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		
+		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
+		Column c=new Column(ByteBufferUtil.bytes(C_CRT_TIMESTAMP), ByteBufferUtil.bytes(timestamp), System.currentTimeMillis());
+		sc.addColumn(c);
+		cf.addColumn(sc);
+		rm.add(cf);
+		
+		// 2, apply it
+		applyRM(rm);
+	}
+	
+	public static long getCurrentCommitNum(String tableName, Range range){
+		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
+				CF_RANGE_pre+range);
+		ColumnFamily cfam = store.getColumnFamily(QueryFilter.getNamesFilter(
+				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
+				ByteBufferUtil.bytes(SC_CURRENT)));
+		if (cfam == null) return -1;
+//		cfam = cfam.cloneMe();
+		IColumn col=null;
+		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_CURRENT))) != null) {
+			if (col instanceof SuperColumn) {
+				SuperColumn sc = (SuperColumn) col;
+				
+				if (!col.isMarkedForDelete()){
+					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_COMMIT));
+					if (c_current != null){
+						c_current.value().position(0);
+						return c_current.value().getLong();
+					}
+					return -1;
+				}
+				else{
+					System.out.println("this column is marked for delete");
+					return -1;
+				}					
+			}
+			else return -1;
+		}
+		return -1;
+	}
+	public static void setCurrentCommitNum(String tableName, Range range, long commitNum){
+		long existed = getCurrentCommitNum(tableName, range);
+		if (existed >= commitNum)
+			return;
+		
+		// 1, make a rowmutation
+		DecoratedKey dk = Util.dk(tableName);
+		RowMutation rm = new RowMutation(TABLE, dk.key);
+		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		
+		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
+		Column c=new Column(ByteBufferUtil.bytes(C_CRT_COMMIT), ByteBufferUtil.bytes(commitNum), System.currentTimeMillis());
+		sc.addColumn(c);
+		cf.addColumn(sc);
+		rm.add(cf);
+		
+		// 2, apply it
+		applyRM(rm);
+	}
+	
+	public static long getCurrentApplyNum(String tableName, Range range){
+		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
+				CF_RANGE_pre+range);
+		ColumnFamily cfam = store.getColumnFamily(QueryFilter.getNamesFilter(
+				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
+				ByteBufferUtil.bytes(SC_CURRENT)));
+		if (cfam == null) return -1;
+//		cfam = cfam.cloneMe();
+		IColumn col=null;
+		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_CURRENT))) != null) {
+			if (col instanceof SuperColumn) {
+				SuperColumn sc = (SuperColumn) col;
+				
+				if (!col.isMarkedForDelete()){
+					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_APPLY));
+					if (c_current != null){
+						c_current.value().position(0);
+						return c_current.value().getLong();
+					}
+					return -1;
+				}
+				else{
+					System.out.println("this column is marked for delete");
+					return -1;
+				}					
+			}
+			else return -1;
+		}
+		return -1;
+	}
+	/***
+	 * apply num can only be called when read recover
+	 * @param tableName
+	 * @param range
+	 * @param applyNumber
+	 */
+	public static void setCurrentApplyNum(String tableName, Range range, long applyNumber){
+		long existed = getCurrentApplyNum(tableName, range);
+		if (existed >= applyNumber)
+			return;
+		
+		// 1, make a rowmutation
+		DecoratedKey dk = Util.dk(tableName);
+		RowMutation rm = new RowMutation(TABLE, dk.key);
+		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		
+		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
+		Column c=new Column(ByteBufferUtil.bytes(C_CRT_APPLY), ByteBufferUtil.bytes(applyNumber), System.currentTimeMillis());
+		sc.addColumn(c);
+		cf.addColumn(sc);
+		rm.add(cf);
+		
+		// 2, apply it
+		applyRM(rm);
+	}
+	
+	public static long getCurrentAcceptedNum(String tableName, Range range){
+		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
+				CF_RANGE_pre+range);
+		ColumnFamily cfam = store.getColumnFamily(QueryFilter.getNamesFilter(
+				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
+				ByteBufferUtil.bytes(SC_CURRENT)));
+		if (cfam == null) return -1;
+//		cfam = cfam.cloneMe();
+		IColumn col=null;
+		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_CURRENT))) != null) {
+			if (col instanceof SuperColumn) {
+				SuperColumn sc = (SuperColumn) col;
+				
+				if (!col.isMarkedForDelete()){
+					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_ACCEPTED));
+					if (c_current != null){
+						c_current.value().position(0);
+						return c_current.value().getLong();
+					}
+					return -1;
+				}
+				else{
+					System.out.println("this column is marked for delete");
+					return -1;
+				}					
+			}
+			else return -1;
+		}
+		return -1;
+	}
+	public static void setCurrentAcceptedNum(String tableName, Range range, long instanceNumber){
+		long existed = getCurrentAcceptedNum(tableName, range);
+		if (existed >= instanceNumber)
+			return;
+		
+		// 1, make a rowmutation
+		DecoratedKey dk = Util.dk(tableName);
+		RowMutation rm = new RowMutation(TABLE, dk.key);
+		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		
+		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
+		Column c=new Column(ByteBufferUtil.bytes(C_CRT_ACCEPTED), ByteBufferUtil.bytes(instanceNumber), System.currentTimeMillis());
 		sc.addColumn(c);
 		cf.addColumn(sc);
 		rm.add(cf);
@@ -357,6 +641,7 @@ public class SimpleAccess {
 	
 	//for witness hint
 	public static RowMutation getHintRM_updateProposalNum(String tableName, Range range, long instanceNumber){
+		// 1, get whole super column for a instance
 		DecoratedKey dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
@@ -365,6 +650,7 @@ public class SimpleAccess {
 				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
 				ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber)));
 		if (cf == null) return null;
+		// 2, add it to an empty rm
 		rm.add(cf);
 		return rm;
 	}

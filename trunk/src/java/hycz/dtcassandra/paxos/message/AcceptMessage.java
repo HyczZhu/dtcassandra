@@ -48,6 +48,7 @@ public class AcceptMessage implements MessageProducer,IPaxosMessage{
 	private long proposalNumber;
 	private boolean hasValue;
 	private IPaxosValue paxosValue;
+	private long timestamp;
 	
 	public AcceptMessage(String tableName, Range range, long instanceNumber, long proposalNumber, IPaxosValue paxosValue){
 		this.tableName=tableName;
@@ -115,7 +116,8 @@ public class AcceptMessage implements MessageProducer,IPaxosMessage{
 				+ ", range=" + range
 				+ ", instanceNumber=" + instanceNumber
 				+ ", proposalNumber=" + proposalNumber 
-				+ ", value=" + paxosValue.getValue()
+//				+ ", value=" + paxosValue.getValue()
+				+ ", value=" + (paxosValue == null? null : paxosValue.getValue())
 				+ ")";
 	}
 

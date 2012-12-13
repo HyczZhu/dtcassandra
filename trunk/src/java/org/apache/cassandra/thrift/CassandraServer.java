@@ -359,6 +359,12 @@ public class CassandraServer implements Cassandra.Iface
         List<ByteBuffer> nameAsList = Arrays.asList(column_path.column == null ? column_path.super_column : column_path.column);
         ThriftValidation.validateKey(metadata, key);
         ReadCommand command = new SliceByNamesReadCommand(keyspace, key, path, nameAsList);
+        //情况一：如果column_path中的column为null，则command中的path里super column和column都设为null，command中的columnNames设为supercolumn
+        //情况二：如果column_path中的column不为null，则command中的path里需要设置super column，command中的columnNames设为column
+        //  对于一个standard cf，传入的path中supercolumn = null，column != null，进入情况二，但是command中path的super column依然被设置为null
+        //  对于一个super cf，传入的path中supercolumn != null，column不一定，
+        //如果进入情况一，则是取整个super column，对于command来说，supercolumn的信息放在了columnNames里，
+        //如果进入情况二，则是supercolumn中的某sub column，supercolumn的信息放在了path里
 
         Map<DecoratedKey, ColumnFamily> cfamilies = readColumnFamily(Arrays.asList(command), consistency_level);
 

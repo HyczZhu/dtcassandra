@@ -26,6 +26,7 @@ public class StringPaxosValue extends AbstractPaxosValue{
 	Table table;
 	Range range;
 	String value;
+	private long timestamp;
 	
 	private static StringPaxosValueSerializer serializer = new StringPaxosValueSerializer();
 
@@ -42,6 +43,14 @@ public class StringPaxosValue extends AbstractPaxosValue{
 		table = Table.open(tablename);
 		this.range = range;
 		this.value = value;
+		timestamp = -1;
+	}
+	
+	public StringPaxosValue(String tablename, Range range, String value, long timestamp) {
+		table = Table.open(tablename);
+		this.range = range;
+		this.value = value;
+		this.timestamp = timestamp;
 	}
 	
 	@Override
@@ -62,6 +71,20 @@ public class StringPaxosValue extends AbstractPaxosValue{
 	@Override
 	public String getValue() {
 		return value;
+	}
+	
+	@Override
+	public void setTimestamp(long timestamp){
+		this.timestamp = timestamp;
+	}
+	
+	@Override
+	public long getTimestamp(){
+		return timestamp;
+	}
+	
+	@Override
+	public void apply(){
 	}
 	
 	@Override
@@ -100,14 +123,16 @@ public class StringPaxosValue extends AbstractPaxosValue{
 			out.writeUTF(value.getTableName());
 			AbstractBounds.serializer().serialize(value.getRange(), out);
 			out.writeUTF((String)(value.getValue()));
+			out.writeLong(value.getTimestamp());
 		}
 
 		public IPaxosValue deserialize(DataInput in) throws IOException {
 			String tableName = in.readUTF();	
 			Range range = (Range) AbstractBounds.serializer().deserialize(in);
 			String value = in.readUTF();
+			long timestamp = in.readLong();
 
-			return new StringPaxosValue(tableName, range,value);
+			return new StringPaxosValue(tableName, range, value, timestamp);
 
         }
     }

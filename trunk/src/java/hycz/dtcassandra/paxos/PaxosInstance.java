@@ -10,9 +10,11 @@ public class PaxosInstance {
 	private String state;
 	private IPaxosValue chosenValue;
 	
-	PaxosInstance(long instanceNumber, long proposalNumber) {
-		this(instanceNumber, proposalNumber, null);
-	}
+//	private long timestamp;
+	
+//	PaxosInstance(long instanceNumber, long proposalNumber) {
+//		this(instanceNumber, proposalNumber, null);
+//	}
 	
 	/***
 	 * 
@@ -20,9 +22,9 @@ public class PaxosInstance {
 	 * @param proposalNumber
 	 * @param paxosValue
 	 */
-	public PaxosInstance(long instanceNumber, long proposalNumber, IPaxosValue paxosValue) {
-		this(instanceNumber, proposalNumber, paxosValue, PaxosState.Pending);
-	}
+//	public PaxosInstance(long instanceNumber, long proposalNumber, IPaxosValue paxosValue) {
+//		this(instanceNumber, proposalNumber, paxosValue, PaxosState.Pending);
+//	}
 	
 	public PaxosInstance(long instanceNumber, long proposalNumber, IPaxosValue paxosValue, String state) {
 		this.instanceNumber = instanceNumber;
@@ -30,6 +32,7 @@ public class PaxosInstance {
 		this.paxosValue = paxosValue;
 		this.state = state;
 		this.chosenValue = null;
+//		this.timestamp = timestamp;
 	}
 	
 	public PaxosInstance(long instanceNumber, long proposalNumber, IPaxosValue paxosValue, String state, IPaxosValue chosenValue) {
@@ -38,6 +41,7 @@ public class PaxosInstance {
 		this.paxosValue = paxosValue;
 		this.state = state;
 		this.chosenValue = chosenValue;
+//		this.timestamp = timestamp;
 	}
 	
 	public long getInstanceNumber() {
@@ -60,6 +64,10 @@ public class PaxosInstance {
 		return chosenValue;
 	}
 	
+//	public long getTimestamp(){
+//		return timestamp;
+//	}
+	
 	public void setProposalNumber(long proposalNum){
 		this.proposalNumber = proposalNum;
 	}
@@ -75,6 +83,10 @@ public class PaxosInstance {
 	public void setChosenValue(IPaxosValue chosenValue){
 		this.chosenValue = chosenValue;
 	}
+	
+//	public void setTimestamp(long timestamp){
+//		this.timestamp = timestamp;
+//	}
 	
 	public String toString(){
 		String s = "instanceNumber=" + instanceNumber

@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.service;
 
+import hycz.dtcassandra.transaction.NullRowResolver;
+
 import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -504,6 +506,82 @@ public class StorageProxy implements StorageProxyMBean
             StageManager.getStage(Stage.MUTATION).execute(runnable);
         else
             runnable.run();
+    }
+    
+    public static List<Row> currentReadFetchRow(ReadCommand command, ConsistencyLevel consistency_level, List<InetAddress> endpoints) throws IOException, UnavailableException, TimeoutException
+    {
+//        List<ReadCallback<Row>> readCallbacks = new ArrayList<ReadCallback<Row>>();
+        List<Row> rows = new ArrayList<Row>();
+
+        // send out read requests
+//        for (ReadCommand command: commands)
+//        {
+//            assert !command.isDigestQuery();
+            logger.debug("Command/ConsistencyLevel is {}/{}", command, consistency_level);
+
+//            List<InetAddress> endpoints = StorageService.instance.getLiveNaturalEndpoints(command.table, command.key);
+//            DatabaseDescriptor.getEndpointSnitch().sortByProximity(FBUtilities.getLocalAddress(), endpoints);
+
+            NullRowResolver resolver = new NullRowResolver(command.table, command.key);
+            ReadCallback<Row> handler = getReadCallback(resolver, command, consistency_level, endpoints);
+            handler.assureSufficientLiveNodes();
+            assert !handler.endpoints.isEmpty();
+
+            // no digestCommand
+            
+            for (InetAddress address : handler.endpoints){
+            	if (address.equals(FBUtilities.getLocalAddress())){
+            		if (logger.isDebugEnabled())
+                        logger.debug("reading data locally");
+                    StageManager.getStage(Stage.READ).execute(new LocalReadRunnable(command, handler));
+            	}
+            	else{
+            		if (logger.isDebugEnabled())
+                        logger.debug("reading data from " + address);
+                    MessagingService.instance().sendRR(command, address, handler);
+            	}
+            }
+
+//            readCallbacks.add(handler);
+//        }
+
+//        for (int i = 0; i < commands.size(); i++)
+//        {
+//            ReadCallback<Row> handler = readCallbacks.get(i);
+            Row row;
+//            ReadCommand command = commands.get(i);
+            try
+            {
+                long startTime2 = System.currentTimeMillis();
+                row = handler.get(); // CL.ONE is special cased here to ignore digests even if some have arrived
+                if (row != null)
+                    rows.add(row);
+
+                if (logger.isDebugEnabled())
+                    logger.debug("Read: " + (System.currentTimeMillis() - startTime2) + " ms.");
+            }
+            catch (TimeoutException ex)
+            {
+                if (logger.isDebugEnabled())
+                    logger.debug("Read timeout: {}", ex.toString());
+                throw ex;
+            }
+            catch (DigestMismatchException ex)
+            {
+//                if (logger.isDebugEnabled())
+//                    logger.debug("Digest mismatch: {}", ex.toString());
+//                RowRepairResolver resolver = new RowRepairResolver(command.table, command.key);
+//                RepairCallback<Row> repairHandler = new RepairCallback<Row>(resolver, handler.endpoints);
+//                for (InetAddress endpoint : handler.endpoints)
+//                    MessagingService.instance().sendRR(command, endpoint, repairHandler);
+//
+//                if (repairResponseHandlers == null)
+//                    repairResponseHandlers = new ArrayList<RepairCallback<Row>>();
+//                repairResponseHandlers.add(repairHandler);
+            }
+//        }
+
+        return rows;
     }
 
     /**

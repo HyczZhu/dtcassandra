@@ -28,7 +28,11 @@ public class PaxosDeliverResponseVerbHandler implements IVerbHandler{
 
 		DeliverResponseMessage deliverResponseMessage;
 		try {
-			Thread.sleep(2000);
+//			try{
+//				Thread.sleep(2000);
+//			}catch (InterruptedException e) {
+//				e.printStackTrace();
+//			}
 			deliverResponseMessage = DeliverResponseMessage.serializer().deserialize(new DataInputStream(body), message.getVersion());
 			
 			logger_.debug("This is deliverResponse(" 
@@ -60,9 +64,6 @@ public class PaxosDeliverResponseVerbHandler implements IVerbHandler{
 			
 		} catch (IOException e) {
 			System.out.println("an IOException is thrown.");
-			e.printStackTrace();
-		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}

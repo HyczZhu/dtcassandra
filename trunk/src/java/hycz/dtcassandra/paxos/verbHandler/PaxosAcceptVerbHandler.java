@@ -1,5 +1,6 @@
 package hycz.dtcassandra.paxos.verbHandler;
 
+import hycz.dtcassandra.paxos.AcceptResult;
 import hycz.dtcassandra.paxos.PaxosInstanceManager;
 import hycz.dtcassandra.paxos.PaxosLeaderInstanceManager;
 import hycz.dtcassandra.paxos.StringPaxosValue;
@@ -40,30 +41,38 @@ public class PaxosAcceptVerbHandler implements IVerbHandler {
 
 		AcceptMessage acceptMessage;
 		try {
-			Thread.sleep(2000);
+//			try {
+//				Thread.sleep(2000);
+//			} catch (InterruptedException e) {
+//				e.printStackTrace();
+//			}
 			//1, make an acceptMessage
 			acceptMessage = AcceptMessage.serializer().deserialize(new DataInputStream(body), message.getVersion());
 			
-			System.out.println("This is accept("
-					+ "instanceNumber = " + acceptMessage.getInstanceNumber()
-					+ ", proposalNumber = "	+ acceptMessage.getProposalNumber()
-					+ ", value = " + acceptMessage.getPaxosValue().getValue()
-					+ ")");
+//			System.out.println("This is accept("
+//					+ "instanceNumber = " + acceptMessage.getInstanceNumber()
+//					+ ", proposalNumber = "	+ acceptMessage.getProposalNumber()
+//					+ ", value = " + (acceptMessage.getPaxosValue() == null? null :acceptMessage.getPaxosValue().getValue())
+//					+ ")");
 			logger_.debug("This is accept(" 
 					+ "instanceNumber = " + acceptMessage.getInstanceNumber()
 					+ ", proposalNumber = " + acceptMessage.getProposalNumber() 
-					+ ", value = " + acceptMessage.getPaxosValue().getValue()
+					+ ", value = " + (acceptMessage.getPaxosValue() == null? null :acceptMessage.getPaxosValue().getValue())
 					+ ")");
 			
 			//2, check acceptor role for this table and key
 			if (ReplicationManager.instance().isAcceptor(acceptMessage.getTableName(), acceptMessage.getRange())){
+				if (acceptMessage.getPaxosValue() == null){
+					
+				}
+				
 				//3, if the role is acceptor, call accept method
 				//   all the stabilize stuff will be done in this method
-				boolean success = PaxosInstanceManager.acceptInstance(acceptMessage);
+				AcceptResult acceptResult = PaxosInstanceManager.acceptInstance(acceptMessage);
 				
 				//4, after accept method, no matter it's synchronized or not, 
 				//   we can not send reply until we are sure that the stabilization is done
-				if (success){
+				if (acceptResult.isSuccess()){
 					// 查看HINT标记检查是否是发往witness的消息，如果是，则在paxos操作成功时，要额外加一个HINT写
 		            byte[] hintedBytes = message.getHeader(RowMutation.HINT);
 		            if (hintedBytes != null){
@@ -93,7 +102,7 @@ public class PaxosAcceptVerbHandler implements IVerbHandler {
 							acceptMessage.getRange(),
 							acceptMessage.getInstanceNumber(),
 							acceptMessage.getProposalNumber(),
-							acceptMessage.getPaxosValue());
+							acceptResult.getAcceptedValue());
 					logger_.debug("accepted message made: ("
 							+ "instanceNumber = " + acceptedMessage.getInstanceNumber()
 							+ ", proposalNumber = " + acceptedMessage.getProposalNumber()
@@ -106,8 +115,6 @@ public class PaxosAcceptVerbHandler implements IVerbHandler {
 			}
 		} catch (IOException e) {
 			System.out.println("an IOException is thrown.");
-			e.printStackTrace();
-		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}

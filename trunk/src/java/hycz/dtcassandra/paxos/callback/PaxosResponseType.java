@@ -6,5 +6,6 @@ public enum PaxosResponseType {
 	Nack,
 	Timeout,
 	NoConsensus,
+	Delivered,
 	Error
 }
