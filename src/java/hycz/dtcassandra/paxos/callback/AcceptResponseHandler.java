@@ -99,7 +99,7 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 	}
 	
 	@Override
-	public void response(IPaxosMessage pmsg) {
+	public void response(IPaxosMessage pmsg) {		
 		if (pmsg instanceof AcceptedMessage){
 			if (((AcceptedMessage)pmsg).isNack()){
 				if (nackcount.incrementAndGet() >= expectedResponses)
@@ -107,6 +107,8 @@ public class AcceptResponseHandler extends AbstractPaxosResponseHandler{
 			}
 			else{
 				IPaxosValue value = pmsg.getPaxosValue();
+//				System.out.println("expectedValue = " + (expectedValue==null?null:expectedValue.getValue()));
+//				System.out.println("responseValue = " + (value==null?null:value.getValue()));
 				// normal paxos phase 2
 				if (expectedValue != null && value != null) {
 					if (expectedValue.equals(value)){

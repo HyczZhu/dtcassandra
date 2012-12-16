@@ -28,10 +28,10 @@ public abstract class AbstractPaxosResponseHandler implements
 	protected final Multimap<InetAddress, InetAddress> witnessAcceptorEndpoints;
 	protected final ConsistencyLevel consistencyLevel;
 	
-	private String tableName;
-	private Range range;
-	private final long instanceNumber;
-	private long timestamp;
+	protected String tableName;
+	protected Range range;
+	protected long instanceNumber;
+	protected long timestamp;
 
 	protected AbstractPaxosResponseHandler(
 			String tableName,

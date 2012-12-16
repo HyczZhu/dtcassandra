@@ -299,6 +299,9 @@ public class Gossiper implements IFailureDetectionEventListener
         // local epstate will be part of endpointStateMap
         List<InetAddress> endpoints = new ArrayList<InetAddress>(endpointStateMap.keySet());
         Collections.shuffle(endpoints, random);
+//        for (InetAddress e : endpoints){
+//        	System.out.println(e);
+//        }
         for (InetAddress endpoint : endpoints)
         {
             epState = endpointStateMap.get(endpoint);
@@ -307,6 +310,7 @@ public class Gossiper implements IFailureDetectionEventListener
                 generation = epState.getHeartBeatState().getGeneration();
                 maxVersion = getMaxEndpointStateVersion(epState);
             }
+//            System.out.println(endpoint + " " + generation + " " + maxVersion);
             gDigests.add(new GossipDigest(endpoint, generation, maxVersion));
         }
 
@@ -639,6 +643,12 @@ public class Gossiper implements IFailureDetectionEventListener
         if (logger.isTraceEnabled())
             logger.trace("Adding endpoint state for " + ep);
         endpointStateMap.put(ep, epState);
+//        for (Entry<InetAddress, EndpointState> e : endpointStateMap.entrySet()){
+//        	System.out.println(e.getKey().toString() + e.getValue().getUpdateTimestamp());
+//        	for (Entry<ApplicationState, VersionedValue> e2 : e.getValue().getApplicationStateMap().entrySet()){
+//        		System.out.println(e2.getKey() + e2.getValue().value + e2.getValue().version);
+//        	}
+//        }
         if (epState.isAlive())
         {
             // the node restarted before we ever marked it down, so we'll report it as dead briefly so maintenance like resetting the connection pool can occur 
@@ -648,6 +658,12 @@ public class Gossiper implements IFailureDetectionEventListener
         markAlive(ep, epState);
         for (IEndpointStateChangeSubscriber subscriber : subscribers)
             subscriber.onJoin(ep, epState);
+//      for (Entry<InetAddress, EndpointState> e : endpointStateMap.entrySet()){
+//    	System.out.println(e.getKey().toString() + e.getValue().getUpdateTimestamp());
+//    	for (Entry<ApplicationState, VersionedValue> e2 : e.getValue().getApplicationStateMap().entrySet()){
+//    		System.out.println(e2.getKey() + e2.getValue().value + e2.getValue().version);
+//    	}
+//    }
     }
 
     void applyStateLocally(Map<InetAddress, EndpointState> epStateMap)

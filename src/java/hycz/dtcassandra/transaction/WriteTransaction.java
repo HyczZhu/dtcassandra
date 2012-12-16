@@ -56,6 +56,7 @@ public class WriteTransaction {
 				if (deliverSuccess)
 					return deliverSuccess;	
 			}
+			
 //			Runnable deliverAndApply = new Runnable() {
 //			public void run() {
 //				}

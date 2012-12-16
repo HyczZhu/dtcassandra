@@ -30,11 +30,16 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ExpiringMap;
 import org.apache.cassandra.utils.Pair;
 
+import sun.java2d.pipe.SpanShapeRenderer.Simple;
+
 import com.google.common.base.Function;
 
 public class PaxosInstanceManager {
+	
+	
 
 	private static final Map<String, Map<Range, ExpiringMap<Long, PaxosInstance>>> instances;
+	private static final Map<String, Map<Range, ReplicaGroupState>> replicaGroupStates;
 	
 	static {
 		Function<Pair<Long, PaxosInstance>, ?> expiredInstanceHandler = new Function<Pair<Long, PaxosInstance>, Object>()
@@ -50,13 +55,32 @@ public class PaxosInstanceManager {
         };
         
         instances = new HashMap<String, Map<Range, ExpiringMap<Long, PaxosInstance>>>();
+        replicaGroupStates = new HashMap<String, Map<Range,ReplicaGroupState>>();
         Set<String> tables = DatabaseDescriptor.getTables();
+		
+        try{
+			Thread.sleep(2000);
+		}catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		
     	for(String tableName : tables){
+//    		System.out.println(tableName);
+    		if (tableName.equals("system") || tableName.equals("instanceSlot"))
+    			continue;
     		instances.put(tableName, new HashMap<Range, ExpiringMap<Long, PaxosInstance>>());
+    		replicaGroupStates.put(tableName, new HashMap<Range, ReplicaGroupState>());
+    		//TODO dynamic range detection
     		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
+    			System.out.println("initializing PaxosInstance and ReplicaGroupState for table = " + tableName + " range = " + range);
     			instances.get(tableName).put(range, new ExpiringMap<Long, PaxosInstance>(getExpireTime(), expiredInstanceHandler));
+    			replicaGroupStates.get(tableName).put(range, new ReplicaGroupState(tableName, range));
     		}
     	}
+	}
+	
+	public static void setup(){
+		
 	}
 	
 	/***
@@ -113,6 +137,11 @@ public class PaxosInstanceManager {
 		SimpleAccess.newInstance(tableName, range, instanceNum);
 	}
 	
+	public static void deleteInstance(String tableName, Range range, long instanceNum){
+//		System.out.println("deleting instance " + instanceNum);
+		SimpleAccess.deleteInstance(tableName, range, instanceNum);
+	}
+	
 	public static PromiseResult promiseInstance(String tableName, Range range, long instanceNum, long proposalNum) throws NullPointerException{
 		boolean success = false;
 		long previousProposalNumber = -1;
@@ -122,12 +151,14 @@ public class PaxosInstanceManager {
 			//1, check its state
 			if ((PaxosState.Pending.equals(instance.getState()) || PaxosState.Accepted.equals(instance.getState()))
 					&& instance.getProposalNumber() <= proposalNum){
+				System.out.println("    Actor: phase 1: promising "+proposalNum);
 				//2, make a promise stabilization
 				SimpleAccess.updateProposalNum(tableName, range, instanceNum, proposalNum);
 				instance.setProposalNumber(proposalNum);
 				success = true;
 			}
 			else{
+				System.out.println("    Actor: phase 1: ignore");
 				success = false;
 				previousProposalNumber = instance.getProposalNumber();
 			}
@@ -166,13 +197,16 @@ public class PaxosInstanceManager {
 		boolean success = false;
 		long previousProposalNumber = -1;
 		IPaxosValue acceptedValue = null;		
-		PaxosInstance instance = PaxosInstanceManager.getInstance(tableName, range, instanceNum);
+		PaxosInstance instance = PaxosInstanceManager.getOrNewInstance(tableName, range, instanceNum);
 		if (instance == null) return new AcceptResult(false, previousProposalNumber, acceptedValue);
+//		System.out.println("before synchoronized");
 		synchronized (instance){
+//			System.out.println("after synchoronized");
 			previousProposalNumber = instance.getProposalNumber();
 			
 			//1, if this is a no-op value, just return the accepted value
 			if (paxosValue == null){
+				System.out.println("    Actor: phase 2: no-op ");
 //					SimpleAccess.updateState(tableName, range, instanceNum, PaxosState.Accepted);
 				// for a noop value, we just update the proposalNum and the state 
 				// then return the accepted value no matter it is null or not
@@ -185,9 +219,10 @@ public class PaxosInstanceManager {
 			//2, check its state
 			else if ((PaxosState.Pending.equals(instance.getState()) || PaxosState.Accepted.equals(instance.getState())) 
 					&& instance.getProposalNumber() <= proposalNum){
+				System.out.println("    Actor: phase 2: accepting value "+ paxosValue.getValue());
 				//3, else, make an accept stabilization
 				SimpleAccess.acceptValue(tableName, range, instanceNum, proposalNum, paxosValue);
-				SimpleAccess.setCurrentInstanceTimestamp(tableName, range, paxosValue.getTimestamp());
+				setCurrentInstanceTimestamp(tableName, range, paxosValue.getTimestamp());
 //				PaxosInstance i = SimpleAccess.getInstance(tableName, range, instanceNum);
 ////				assert i.getPaxosValue().equals(instance.getPaxosValue());
 //				if (i.getPaxosValue() != null)
@@ -199,12 +234,15 @@ public class PaxosInstanceManager {
 				acceptedValue = paxosValue;
 			}
 			else{
+				System.out.println("    Actor: phase 2: ignore");
 				return new AcceptResult(false, previousProposalNumber, acceptedValue);
 			}
 			return new AcceptResult(success, previousProposalNumber, acceptedValue);
 		}
 	}
 	
+	
+
 	public static AcceptResult acceptInstance(AcceptMessage acceptMessage) throws NullPointerException{
 		return acceptInstance(
 				acceptMessage.getTableName(), 
@@ -261,7 +299,7 @@ public class PaxosInstanceManager {
 						return false;
 				}
 				SimpleAccess.deliverNoOpValue(tableName, range, instanceNum);
-				SimpleAccess.setCurrentCommitNum(tableName, range, instanceNum);
+				setCurrentCommitNum(tableName, range, instanceNum);
 				instance.setChosenValue(null);
 				instance.setState(PaxosState.Hole);
 				return true;
@@ -277,7 +315,7 @@ public class PaxosInstanceManager {
 				}
 				//3, else, make an accept stabilization
 				SimpleAccess.deliverValue(tableName, range, instanceNum, paxosValue);
-				SimpleAccess.setCurrentCommitNum(tableName, range, instanceNum);
+				setCurrentCommitNum(tableName, range, instanceNum);
 				//TODO delete debug codes
 				PaxosInstance i = SimpleAccess.getInstance(tableName, range, instanceNum);
 //				assert i.getPaxosValue().equals(instance.getPaxosValue());
@@ -289,7 +327,7 @@ public class PaxosInstanceManager {
 			}
 		}
 	}
-	
+
 	public static boolean deliverInstance(DeliverMessage deliverMessage) {
 		return deliverInstance(
 				deliverMessage.getTableName(), 
@@ -305,6 +343,8 @@ public class PaxosInstanceManager {
 			if (PaxosState.Hole.equals(instance.getState())){
 				SimpleAccess.updateState(tableName, range, instanceNum, PaxosState.Applied);
 				instance.setState(PaxosState.Applied);
+				if ((getCurrentApplyNum(tableName, range) + 1) == instanceNum)
+					setCurrentApplyNum(tableName, range, instanceNum);
 				return true;
 			}
 			else if (PaxosState.Delivered.equals(instance.getState())){
@@ -315,6 +355,8 @@ public class PaxosInstanceManager {
 				}
 				SimpleAccess.updateState(tableName, range, instanceNum, PaxosState.Applied);
 				instance.setState(PaxosState.Applied);
+				if ((getCurrentApplyNum(tableName, range) + 1) == instanceNum)
+					setCurrentApplyNum(tableName, range, instanceNum);
 				return true;
 			}
 			else if (PaxosState.Applied.equals(instance.getState())){
@@ -362,23 +404,46 @@ public class PaxosInstanceManager {
 //	}
 	
 	public static long getCurrentInstanceNum(String tableName, Range range){
-		return SimpleAccess.getCurrentInstanceNum(tableName, range);
+		return replicaGroupStates.get(tableName).get(range).getCurrentInstanceNum();
+//		return SimpleAccess.getCurrentInstanceNum(tableName, range);
 	}
 	
 	public static long getCurrentTimestamp(String tableName, Range range){
-		return SimpleAccess.getCurrentInstanceTimestamp(tableName, range);
+		return replicaGroupStates.get(tableName).get(range).getCurrentTimestamp();
+//		return SimpleAccess.getCurrentInstanceTimestamp(tableName, range);
 	}
 	
 	public static long getCurrentCommitNum(String tableName, Range range){
-		return SimpleAccess.getCurrentCommitNum(tableName, range);
+		return replicaGroupStates.get(tableName).get(range).getCurrentCommitNum();
+//		return SimpleAccess.getCurrentCommitNum(tableName, range);
 	}
 	
 	public static long getCurrentApplyNum(String tableName, Range range){
-		return SimpleAccess.getCurrentApplyNum(tableName, range);
+		return replicaGroupStates.get(tableName).get(range).getCurrentApplyNum();
+//		return SimpleAccess.getCurrentApplyNum(tableName, range);
+	}
+	
+	public static long getMinInstanceNum(String tableName, Range range){
+		return replicaGroupStates.get(tableName).get(range).getMinInstanceNum();
 	}
 	
 	public static void setCurrentApplyNum(String tableName, Range range, long applyNum){
-		SimpleAccess.setCurrentApplyNum(tableName, range, applyNum);
+		replicaGroupStates.get(tableName).get(range).setCurrentApplyNum(applyNum);
+//		SimpleAccess.setCurrentApplyNum(tableName, range, applyNum);
+	}
+	
+	private static void setCurrentInstanceTimestamp(String tableName, Range range, long timestamp) {
+		replicaGroupStates.get(tableName).get(range).setCurrentInstanceTimestamp(timestamp);
+//		SimpleAccess.setCurrentInstanceTimestamp(tableName, range, timestamp);
+	}
+	
+	private static void setCurrentCommitNum(String tableName, Range range, long instanceNum) {
+		replicaGroupStates.get(tableName).get(range).setCurrentCommitNum(instanceNum);
+//		SimpleAccess.setCurrentCommitNum(tableName, range, instanceNum);
+	}
+	
+	public static void setMinInstanceNum(String tableName, Range range, long instanceNum){
+		replicaGroupStates.get(tableName).get(range).setMinInstanceNum(instanceNum);
 	}
 	
 //	/***

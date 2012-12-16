@@ -26,6 +26,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +56,13 @@ public class GossipDigestAck2VerbHandler implements IVerbHandler
             throw new RuntimeException(e);
         }
         Map<InetAddress, EndpointState> remoteEpStateMap = gDigestAck2Message.getEndpointStateMap();
+        
+//        for (Entry<InetAddress, EndpointState> e : remoteEpStateMap.entrySet()){
+//        	System.out.println(e.getKey().toString() + e.getValue().getUpdateTimestamp());
+//        	for (Entry<ApplicationState, VersionedValue> e2 : e.getValue().getApplicationStateMap().entrySet()){
+//        		System.out.println(e2.getKey() + e2.getValue().value + e2.getValue().version);
+//        	}
+//        }
         /* Notify the Failure Detector */
         Gossiper.instance.notifyFailureDetector(remoteEpStateMap);
         Gossiper.instance.applyStateLocally(remoteEpStateMap);

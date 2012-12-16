@@ -43,14 +43,16 @@ public class PaxosDeliverVerbHandler implements IVerbHandler{
 //			System.out.println("This is deliver("
 //					+ "instanceNumber = " + deliverMessage.getInstanceNumber()
 //					+ ", proposalNumber = "	+ deliverMessage.getProposalNumber()
-//					+ ", value = " + deliverMessage.getPaxosValue().getValue()
+//					+ ", value = " + (deliverMessage.getPaxosValue()==null?null:deliverMessage.getPaxosValue().getValue())
 //					+ ")");
 			logger_.debug("This is deliver(" 
 					+ "instanceNumber = " + deliverMessage.getInstanceNumber()
 					+ ", proposalNumber = " + deliverMessage.getProposalNumber() 
-					+ ", value = " + deliverMessage.getPaxosValue().getValue()
+					+ ", value = " + (deliverMessage.getPaxosValue()==null?null:deliverMessage.getPaxosValue().getValue())
 					+ ")");
 			
+			if (deliverMessage.getInstanceNumber() < PaxosInstanceManager.getMinInstanceNum(deliverMessage.getTableName(), deliverMessage.getRange()))
+				return;
 			//2, check learner role for this table and key
 			if (ReplicationManager.instance().isAcceptor(deliverMessage.getTableName(), deliverMessage.getRange())){
 				//3, if the role is learner, call deliver method

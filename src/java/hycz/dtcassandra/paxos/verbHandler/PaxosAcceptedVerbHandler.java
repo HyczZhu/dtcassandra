@@ -39,7 +39,7 @@ public class PaxosAcceptedVerbHandler implements IVerbHandler{
 			logger_.debug("This is accepted(" 
 					+ "instanceNumber = " + acceptedMessage.getInstanceNumber()
 					+ ", proposalNumber = " + acceptedMessage.getProposalNumber() 
-					+ ", value = " + acceptedMessage.getPaxosValue().getValue()
+					+ ", value = " + (acceptedMessage.getPaxosValue()==null?null:acceptedMessage.getPaxosValue().getValue())
 					+ ")");
 			
 			//call back handle

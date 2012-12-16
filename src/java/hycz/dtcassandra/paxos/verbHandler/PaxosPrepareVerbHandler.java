@@ -150,8 +150,9 @@ public class PaxosPrepareVerbHandler implements IVerbHandler{
 		} catch (IOException e) {
 			System.out.println("an IOException is thrown.");
 			e.printStackTrace();
-//		} catch (NullPointerException e) {
-//			e.printStackTrace();
+		} catch (NullPointerException e) {
+			System.out.println("please setup");
+			e.printStackTrace();
 		}
 	}
 }

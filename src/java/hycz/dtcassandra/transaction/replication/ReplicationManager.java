@@ -31,6 +31,8 @@ public class ReplicationManager {
 	public final HashMap<String, HashMap<Range, DynamicWitness>> dynamicWitness;
 	public final HashMap<String, HashMap<Range, DynamicReadonly>> dynamicReadonly;
 	
+	public List<Range> allRanges;
+	
 	//singleton
 	private static class AMHandle
     {
@@ -56,6 +58,16 @@ public class ReplicationManager {
     		dynamicWitness.put(tableName, new HashMap<Range, DynamicWitness>());
     		dynamicReadonly.put(tableName, new HashMap<Range, DynamicReadonly>());
     	}
+    	
+    	allRanges = StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens());
+    }
+    
+    public Range getRange(Token token) throws RangeNotFoundException{
+    	for (Range r : allRanges){
+    		if (r.contains(token))
+    			return r;
+    	}
+    	throw new RangeNotFoundException("no range found for token " + token);
     }
     
     // tell which ActorRole local endpoint is

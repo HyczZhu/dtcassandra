@@ -3,9 +3,11 @@ package hycz.dtcassandra.paxos;
 import hycz.dtcassandra.paxos.actor.ActorRole;
 import hycz.dtcassandra.paxos.callback.IPaxosResponseHandler;
 import hycz.dtcassandra.paxos.callback.PaxosResponseType;
+import hycz.dtcassandra.paxos.callback.PrepareResponseHandler;
 import hycz.dtcassandra.paxos.message.AcceptMessage;
 import hycz.dtcassandra.paxos.message.PrepareMessage;
 import hycz.dtcassandra.paxos.storage.SimpleAccess;
+import hycz.dtcassandra.transaction.NWRLevel;
 import hycz.dtcassandra.transaction.replication.ReplicationManager;
 
 import java.io.IOException;
@@ -19,6 +21,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 
@@ -86,8 +89,8 @@ public class PaxosLeaderInstanceManager {
         
 //		paxosInstances=new ExpiringMap<String, PaxosInstance>((long) (1.1 * DatabaseDescriptor.getRpcTimeout()), timeoutReporter);;
 		leaderInstances=new ExpiringMap<Long, PaxosLeaderInstance>(getExpireTime(), expiredInstanceHandler);
-		long currentInstanceNum = SimpleAccess.getCurrentInstanceNum(tableName, range);
-		System.out.println("table = " + tableName + " range = " + range + " currentInstanceNum = " + currentInstanceNum);
+		long currentInstanceNum = PaxosInstanceManager.getCurrentInstanceNum(tableName, range);
+//		System.out.println("table = " + tableName + " range = " + range + " currentInstanceNum = " + currentInstanceNum);
 		if (currentInstanceNum <= -1){
 			instanceNumberGen = new AtomicLong(-1);
 		}
@@ -111,13 +114,13 @@ public class PaxosLeaderInstanceManager {
 				
 				if (prepareResult == PaxosResponseType.Timeout){
 					logger.debug("prepare result: Timeout");
-					System.out.println("prepare result: Timeout");
+					System.out.println("Leader: prepare result: Timeout");
 					instance.increaseProposalNumber();
 					continue;
 				}
 				else if (prepareResult==PaxosResponseType.Nack){
 					logger.debug("prepare result: Nack");
-					System.out.println("prepare result: Nack");
+					System.out.println("Leader: prepare result: Nack");
 					try {
 						while (instance.getProposalNumber() < instance.getPrepareResponseHandler().getPromisedProposalNumber()){
 							instance.increaseProposalNumber();
@@ -129,7 +132,7 @@ public class PaxosLeaderInstanceManager {
 				}
 				else if (prepareResult==PaxosResponseType.Quorum){
 					logger.debug("prepare result: Quorum");
-					System.out.println("prepare result: Quorum");
+					System.out.println("Leader: prepare result: Quorum");
 					break;
 				}
 			}
@@ -150,14 +153,16 @@ public class PaxosLeaderInstanceManager {
 //				Runnable recover = new Runnable() {
 				long num = instance.getInstanceNumber();
 //					public void run() {
-				System.out.println("trying to recover instance " + num);
+				System.out.println("Leader: trying to recover instance " + num);
 				try {
 					PaxosResponseType acceptResult = instance.executePhaseTwo();
 					if (acceptResult == PaxosResponseType.Quorum){
 						logger.debug("recover : accept result: Quorum");
+						System.out.println("Leader: recover : accept result: Quorum");
 					}
 					else if (acceptResult == PaxosResponseType.Timeout){
 						logger.debug("recover : accept result: Timeout");
+						System.out.println("Leader: recover : accept result: Timeout");
 						
 						// accept fail, try to execute phase one to make this replica leader
 						while (true){
@@ -231,12 +236,12 @@ public class PaxosLeaderInstanceManager {
 					PaxosResponseType acceptResult = empty.executePhaseTwo();
 					if (acceptResult == PaxosResponseType.Quorum){
 						logger.debug("accept result: Quorum");
-						System.out.println("accept result: Quorum");
+						System.out.println("Leader: accept result: Quorum");
 						isSteady = true;
 					}
 					else if (acceptResult == PaxosResponseType.Timeout){
 						logger.debug("accept result: Timeout");
-						System.out.println("accept result: Timeout");
+						System.out.println("Leader: accept result: Timeout");
 						isSteady = false;
 						boolean getResult = false;
 						// accept fail, try to execute phase one to make this replica leader
@@ -244,13 +249,13 @@ public class PaxosLeaderInstanceManager {
 							PaxosResponseType prepareResult = empty.executePhaseOne();
 							if (prepareResult == PaxosResponseType.Timeout){
 								logger.debug("prepare result: Timeout");
-								System.out.println("prepare result: Timeout");
+								System.out.println("Leader: prepare result: Timeout");
 								empty.increaseProposalNumber();
 								continue;
 							}
 							else if (prepareResult==PaxosResponseType.Nack){
 								logger.debug("prepare result: Nack");
-								System.out.println("prepare result: Nack");
+								System.out.println("Leader: prepare result: Nack");
 								try {
 									while (empty.getProposalNumber() < empty.getPrepareResponseHandler().getPromisedProposalNumber()){
 										empty.increaseProposalNumber();
@@ -262,7 +267,7 @@ public class PaxosLeaderInstanceManager {
 							}
 							else if (prepareResult==PaxosResponseType.Quorum){
 								logger.debug("prepare result: Quorum");
-								System.out.println("prepare result: Quorum");
+								System.out.println("Leader: prepare result: Quorum");
 								acceptResult = empty.executePhaseTwo();
 								if (acceptResult == PaxosResponseType.Quorum){
 									//executed an instance with an existed value
@@ -380,6 +385,65 @@ public class PaxosLeaderInstanceManager {
 		return false;
 	}		
 	
+	public boolean cleanupExpired(){
+		//1, get min apply num of this replica group
+		Map<InetAddress, InetAddress> acceptors = ReplicationManager.instance().getReplicationAcceptors(tableName, range);
+		Collection<InetAddress> acceptorEndpoints = acceptors.keySet();
+		Multimap<InetAddress, InetAddress> witnessAcceptorEndpoints = HashMultimap.create(acceptorEndpoints.size(), 1);
+		for (Entry<InetAddress, InetAddress> entry : acceptors.entrySet()){
+			witnessAcceptorEndpoints.put(entry.getValue(), entry.getKey());
+		}
+		
+		//1.1, set prepare callback
+		IPaxosResponseHandler prepareResponseHandler = 
+			PrepareResponseHandler.create(tableName, range, -1, acceptors, ConsistencyLevel.ALL);
+		//1.2, make prepare message
+		PrepareMessage preparemessage = new PrepareMessage(
+				tableName, range, -1, -1);
+//		System.out.println(preparemessage);
+		//1.3, send messages
+		for (Map.Entry<InetAddress, Collection<InetAddress>> entry : witnessAcceptorEndpoints.asMap().entrySet()){
+			InetAddress destination = entry.getKey();
+            Collection<InetAddress> targets = entry.getValue();
+            
+            if (targets.size() == 1 && targets.iterator().next().equals(destination))
+            {
+        	   	try {
+					MessagingService.instance().sendRR(
+							preparemessage.getMessage(MessagingService.version_), 
+							destination, 
+							prepareResponseHandler);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+                
+            }
+		}
+//		System.out.println("send over");
+		
+		//1.4, wait for prepare response
+		PrepareResponseHandler prh= (PrepareResponseHandler) prepareResponseHandler;
+		PaxosResponseType prepareResult = prepareResponseHandler.get();
+		
+//		final long currentCommitNum = prh.getPromisedProposalNumber();
+//		final long currentTimestamp = prh.getTimestamp();
+		final long minApplyNum = prh.getInstanceNumber();
+		
+		final long minInstanceNum = PaxosInstanceManager.getMinInstanceNum(tableName, range);
+		//2, clean up
+//		System.out.println("cleanup from "+minInstanceNum+" to "+minApplyNum);
+
+		for (long i=minInstanceNum<0?0:minInstanceNum; i <= minApplyNum; ++i){
+			try{
+				PaxosInstanceManager.deleteInstance(tableName, range, i);
+			}catch(Exception e){
+				e.printStackTrace();
+			}
+			PaxosInstanceManager.setMinInstanceNum(tableName, range, i+1);
+		}
+		return true;
+	}
+	
 	private PaxosLeaderInstance getAndCreateLeaderInstance(Long instanceNum){
 		PaxosLeaderInstance instance = getLeaderInstance(instanceNum);
 		if (instance != null) 
@@ -389,7 +453,7 @@ public class PaxosLeaderInstanceManager {
 		}
 	}
 
-	public PaxosLeaderInstance getLeaderInstance(Long instanceNum){
+	private PaxosLeaderInstance getLeaderInstance(Long instanceNum){
 		return leaderInstances.get(instanceNum);
 	}
 	

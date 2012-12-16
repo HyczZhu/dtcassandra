@@ -37,14 +37,20 @@ public class PaxosOverallManager {
 		leaderInstances = new HashMap<String, Map<Range, PaxosLeaderInstanceManager>>();
         Set<String> tables = DatabaseDescriptor.getTables();
     	for(String tableName : tables){
+    		if (tableName.equals("system") || tableName.equals("instanceSlot"))
+    			continue;
     		leaderInstances.put(tableName, new HashMap<Range, PaxosLeaderInstanceManager>());
     		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
     			leaderInstances.get(tableName).put(range, new PaxosLeaderInstanceManager(tableName, range));
     		}
     	}
+    	System.out.println("PaxosOverallManager initialized successfully");
     	//for test
 //    	for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens()))
 //    		leaderInstances.put("TestTable", new PaxosLeaderInstanceManager("TestTable", range));
+	}
+	
+	public static void setup(){
 	}
 	
 	public static PaxosLeaderInstanceManager get(String tableName, Range range){
