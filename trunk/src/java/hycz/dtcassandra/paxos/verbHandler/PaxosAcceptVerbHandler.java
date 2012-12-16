@@ -54,18 +54,15 @@ public class PaxosAcceptVerbHandler implements IVerbHandler {
 //					+ ", proposalNumber = "	+ acceptMessage.getProposalNumber()
 //					+ ", value = " + (acceptMessage.getPaxosValue() == null? null :acceptMessage.getPaxosValue().getValue())
 //					+ ")");
-			logger_.debug("This is accept(" 
-					+ "instanceNumber = " + acceptMessage.getInstanceNumber()
-					+ ", proposalNumber = " + acceptMessage.getProposalNumber() 
-					+ ", value = " + (acceptMessage.getPaxosValue() == null? null :acceptMessage.getPaxosValue().getValue())
-					+ ")");
+//			logger_.debug("This is accept(" 
+//					+ "instanceNumber = " + acceptMessage.getInstanceNumber()
+//					+ ", proposalNumber = " + acceptMessage.getProposalNumber() 
+//					+ ", value = " + (acceptMessage.getPaxosValue() == null? null :acceptMessage.getPaxosValue().getValue())
+//					+ ")");
 			
 			//2, check acceptor role for this table and key
-			if (ReplicationManager.instance().isAcceptor(acceptMessage.getTableName(), acceptMessage.getRange())){
-				if (acceptMessage.getPaxosValue() == null){
-					
-				}
-				
+			if (ReplicationManager.instance().isAcceptor(acceptMessage.getTableName(), acceptMessage.getRange())){				
+//				System.out.println("trying to accept");
 				//3, if the role is acceptor, call accept method
 				//   all the stabilize stuff will be done in this method
 				AcceptResult acceptResult = PaxosInstanceManager.acceptInstance(acceptMessage);
@@ -106,7 +103,7 @@ public class PaxosAcceptVerbHandler implements IVerbHandler {
 					logger_.debug("accepted message made: ("
 							+ "instanceNumber = " + acceptedMessage.getInstanceNumber()
 							+ ", proposalNumber = " + acceptedMessage.getProposalNumber()
-							+ ", value = " + acceptedMessage.getPaxosValue().getValue()
+							+ ", value = " + (acceptResult.getAcceptedValue()==null?null:acceptResult.getAcceptedValue().getValue())
 							+ ")");
 					reply=AcceptedMessage.makeAcceptedMessage(message, acceptedMessage);
 					logger_.debug("attemping to send back to "+message.getFrom().getHostAddress());

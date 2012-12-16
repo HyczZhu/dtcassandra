@@ -134,6 +134,7 @@ public class PaxosLeaderInstance {
             
             if (targets.size() == 1 && targets.iterator().next().equals(destination))
             {
+            	System.out.println("Leader: sending the prepare message to " + destination.getHostAddress());
         	   	MessagingService.instance().sendRR(
             			preparemessage.getMessage(MessagingService.version_), 
             			destination, 
@@ -154,11 +155,11 @@ public class PaxosLeaderInstance {
 						 StorageProxy.addHintHeader(hintedMessage, target);
 					}
 				}	                
-				logger.debug("sending the prepare message to " + destination.getHostAddress());
+				logger.debug("sending the prepare message to " + destination.getHostAddress() + " witness");
 				MessagingService.instance().sendRR(hintedMessage, destination, prepareResponseHandler);				
             }
 		}
-		System.out.println("send over");
+		System.out.println("Leader: send over , prepare");
 		
 		//4, wait for prepare response
 		PaxosResponseType prepareResult=prepareResponseHandler.get();
@@ -250,8 +251,8 @@ public class PaxosLeaderInstance {
 			// ±¾µØ
 			if (targets.size() == 1 && targets.iterator().next().equals(destination))
             {
-				logger.debug("sending the accept message to "
-						+ destination.getHostAddress());
+				logger.debug("sending the accept message to " + destination.getHostAddress());
+				System.out.println("Leader: sending the accept message to " + destination.getHostAddress());
         	   	MessagingService.instance().sendRR(
         	   			acceptMessage.getMessage(MessagingService.version_), 
             			destination, 
@@ -271,10 +272,11 @@ public class PaxosLeaderInstance {
 						 StorageProxy.addHintHeader(hintedMessage, target);
 					}
 				}	                
-				logger.debug("sending the accept message to " + destination.getHostAddress());
+				logger.debug("sending the accept message to " + destination.getHostAddress() + " witness");
 				MessagingService.instance().sendRR(hintedMessage, destination, acceptResponseHandler);				
             }
 		}
+		System.out.println("Leader: send over , accept");
 		
 		//5, wait for accept response
 		PaxosResponseType acceptResult = acceptResponseHandler.get();
@@ -404,6 +406,7 @@ public class PaxosLeaderInstance {
 	public boolean setPaxosValue(IPaxosValue paxosValue){
 		if (this.paxosValue == null){
 			this.paxosValue=paxosValue;
+			System.out.println("Leader: moving to phase 2, the value = "+(paxosValue==null?null:paxosValue.getValue()));
 			return true;
 		}
 		return false;

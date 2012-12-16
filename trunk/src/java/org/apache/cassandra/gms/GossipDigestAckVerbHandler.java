@@ -28,6 +28,7 @@ import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +61,7 @@ public class GossipDigestAckVerbHandler implements IVerbHandler
             GossipDigestAckMessage gDigestAckMessage = GossipDigestAckMessage.serializer().deserialize(dis, message.getVersion());
             List<GossipDigest> gDigestList = gDigestAckMessage.getGossipDigestList();
             Map<InetAddress, EndpointState> epStateMap = gDigestAckMessage.getEndpointStateMap();
-
+            
             if ( epStateMap.size() > 0 )
             {
                 /* Notify the Failure Detector */

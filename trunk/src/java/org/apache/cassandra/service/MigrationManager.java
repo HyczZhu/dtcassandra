@@ -22,6 +22,7 @@ import java.io.*;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
@@ -61,6 +62,10 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
     /** gets called after a this node joins a cluster */
     public void onAlive(InetAddress endpoint, EndpointState state)
     { 
+//    	System.out.println(endpoint);
+//    	for (Entry<ApplicationState, VersionedValue> e2 : state.getApplicationStateMap().entrySet()){
+//    		System.out.println(e2.getKey() + e2.getValue().value + e2.getValue().version);
+//    	}
         VersionedValue value = state.getApplicationState(ApplicationState.SCHEMA);
         if (value != null)
         {

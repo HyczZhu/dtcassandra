@@ -266,7 +266,19 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         while (!gossiper.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.SCHEMA).value.equals(
                 gossiper.getEndpointStateForEndpoint(FBUtilities.getLocalAddress()).getApplicationState(ApplicationState.SCHEMA).value))
         {
+//        String a = gossiper.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.SCHEMA).value;
+//        String b = gossiper.getEndpointStateForEndpoint(FBUtilities.getLocalAddress()).getApplicationState(ApplicationState.SCHEMA).value;
+//        System.out.println(a);
+//    	System.out.println(b);
+//        while (!a.equals(
+//              b))
+//        {
+//        	System.out.println(a);
+//        	System.out.println(b);
             Thread.sleep(1000);
+//            a = gossiper.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.SCHEMA).value;
+//            b = gossiper.getEndpointStateForEndpoint(FBUtilities.getLocalAddress()).getApplicationState(ApplicationState.SCHEMA).value;
+            
             waited += 1000;
             if (waited > 2 * StorageService.RING_DELAY)
                 throw new RuntimeException("Could not reach schema agreement with " + endpoint + " in " + 2 * StorageService.RING_DELAY + "ms");

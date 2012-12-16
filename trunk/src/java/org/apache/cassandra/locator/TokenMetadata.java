@@ -471,7 +471,7 @@ public class TokenMetadata
         List tokens = sortedTokens();
         int index = Collections.binarySearch(tokens, token);
         assert index >= 0 : token + " not found in " + StringUtils.join(tokenToEndpointMap.keySet(), ", ");
-        if (tokens.size() == 1) return (Token)(tokens.get(0));
+//        if (tokens.size() == 1) return (Token)(tokens.get(0));
         return (Token) (index == 0 ? tokens.get(tokens.size() - 1) : tokens.get(index - 1));
     }
 
@@ -480,9 +480,20 @@ public class TokenMetadata
         List tokens = sortedTokens();
         int index = Collections.binarySearch(tokens, token);
         assert index >= 0 : token + " not found in " + StringUtils.join(tokenToEndpointMap.keySet(), ", ");
-        if (tokens.size() == 1) return (Token)(tokens.get(0));
+//        if (tokens.size() == 1) return (Token)(tokens.get(0));
         return (Token) ((index == (tokens.size() - 1)) ? tokens.get(0) : tokens.get(index + 1));
     }
+    
+//    public Range getRange(Token token){
+//    	List tokens = sortedTokens();
+//    	int index = Collections.binarySearch(tokens, token);
+//    	if (index > 0){
+//    		
+//    	}
+//    	else{
+//    		
+//    	}
+//    }
 
     /** caller should not modify bootstrapTokens */
     public Map<Token, InetAddress> getBootstrapTokens()

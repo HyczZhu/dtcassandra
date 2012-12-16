@@ -167,6 +167,13 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 					this.uptodateEndpoints.add(msg.getFrom());
 				}
 			}
+			// this part is only for cleanup
+			if (this.instanceNumber == -1){
+				this.instanceNumber = pmsg.getInstanceNumber();
+			}
+			else if (this.instanceNumber < pmsg.getInstanceNumber()){
+				this.instanceNumber = pmsg.getInstanceNumber();
+			}
 			if (((PromiseMessage)pmsg).getTimestamp() > getTimestamp()){
 				setTimestamp(((PromiseMessage)pmsg).getTimestamp());
 			}
@@ -190,7 +197,7 @@ public class PrepareResponseHandler extends AbstractPaxosResponseHandler {
 	}
 	
 	public List<InetAddress> getUptodateEndpoints(){
-		return uptodateEndpoints;
+		return new ArrayList<InetAddress>(uptodateEndpoints);
 	}
 
 	public void response(Message m) {

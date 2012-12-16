@@ -24,7 +24,9 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.cassandra.Util;
@@ -54,6 +56,7 @@ import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.migration.AddColumnFamily;
 import org.apache.cassandra.db.migration.AddKeyspace;
+import org.apache.cassandra.db.migration.Migration;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.locator.LocalStrategy;
@@ -88,6 +91,7 @@ public class SimpleAccess {
 	public final static String C_CRT_COMMIT = "commitNum";
 	public final static String C_CRT_APPLY = "applyNum";
 	public final static String C_CRT_ACCEPTED = "acceptedNum";
+	public final static String C_MIN_INSTANCENUM = "minInstanceNum";
 	public final static String SC_INSTANCE_pre = "instance";
 	public final static String C_STATE = "state";
 	public final static String C_PROPOSALNUM = "proposalNum";
@@ -102,9 +106,9 @@ public class SimpleAccess {
 	public final static int version = Gossiper.instance.getVersion(FBUtilities.getLocalAddress());
 	
 	static {
-		tryAddNewKeyspace();
-		tryAddNewColumnFamily();
-		tryAddTestKeyspace();
+		tryAddPaxosUtilKeyspace();
+//		tryAddNewColumnFamily();
+//		tryAddTestKeyspace();
 	}
 	
 	public static PaxosInstance getInstance(String tableName, Range range, long instanceNumber){
@@ -142,8 +146,8 @@ public class SimpleAccess {
 //						return (SuperColumn)col;
 					//get proposal num
 					IColumn c_proposalNum = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_PROPOSALNUM));
-					long proposalNum = c_proposalNum.value().getLong();
-					c_proposalNum.value().position(0);
+					long proposalNum = ByteBufferUtil.toLong(c_proposalNum.value());
+//					c_proposalNum.value().position(0);
 					
 					//get paxos value
 					IPaxosValue value = null;
@@ -170,7 +174,7 @@ public class SimpleAccess {
 					} catch (CharacterCodingException e) {
 						e.printStackTrace();
 					}
-					if (state == PaxosState.Delivered){
+					if (PaxosState.Delivered.equals(state) || PaxosState.Applied.equals(state)){
 						//get chosen value
 						IPaxosValue chosenValue = null;
 						IColumn c_chosenValue = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CHOSENVALUE));
@@ -187,7 +191,8 @@ public class SimpleAccess {
 					
 				}
 				else{
-					System.out.println("this column is marked for delete");
+					System.out.println("getInstance: this column is marked for delete");
+					System.out.println("trying to get instance " + instanceNumber+", while the min instanceNum = "+ getMinInstanceNum(tableName, range));
 					return null;
 				}					
 			}
@@ -200,7 +205,7 @@ public class SimpleAccess {
 	
 	public static void newInstance(String tableName, Range range, long instanceNumber) {
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -213,8 +218,7 @@ public class SimpleAccess {
 //		while (timestamp < getCurrentInstanceTimestamp(tableName, range)){
 //			++timestamp;
 //		}
-		
-		ByteBuffer timestamp_bytes = ByteBufferUtil.bytes(-1L);
+//		ByteBuffer timestamp_bytes = ByteBufferUtil.bytes(-1L);
 		
 		Column c1=new Column(ByteBufferUtil.bytes(C_STATE), state, System.currentTimeMillis());
 		Column c2=new Column(ByteBufferUtil.bytes(C_PROPOSALNUM), proposalNum, System.currentTimeMillis());
@@ -239,9 +243,21 @@ public class SimpleAccess {
 		setCurrentInstanceNum(tableName, range, instanceNumber);
 	}
 	
+	public static void deleteInstance(String tableName, Range range, long instanceNumber) {
+		// 1, make a rowmutation
+		DecoratedKey<?> dk = Util.dk(tableName);
+		RowMutation rm = new RowMutation(TABLE, dk.key);
+		QueryPath path = new QueryPath(CF_RANGE_pre+range, ByteBufferUtil.bytes(SC_INSTANCE_pre+instanceNumber), null);
+
+		rm.delete(path, System.currentTimeMillis());
+
+		// 2, apply it
+		applyRM(rm);
+	}
+	
 	public static void updateState(String tableName, Range range, long instanceNumber, String state){
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -257,7 +273,7 @@ public class SimpleAccess {
 	
 	public static void updateProposalNum(String tableName, Range range, long instanceNumber, long proposalNum){
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -275,7 +291,7 @@ public class SimpleAccess {
 	public static void updateValue(String tableName, Range range, long instanceNumber, long proposalNum, IPaxosValue value){
 		if (value == null) return;
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.getValueType(value));
@@ -304,7 +320,7 @@ public class SimpleAccess {
 	 */
 	public static void acceptValue(String tableName, Range range, long instanceNumber, long proposalNum, IPaxosValue value){
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		ByteBuffer valueType = ByteBufferUtil.bytes(PaxosValueFactory.getValueType(value));
@@ -335,7 +351,7 @@ public class SimpleAccess {
 	 */
 	public static void deliverNoOpValue(String tableName, Range range, long instanceNumber){
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -359,7 +375,7 @@ public class SimpleAccess {
 	 */
 	public static void deliverValue(String tableName, Range range, long instanceNumber, IPaxosValue value){
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -383,6 +399,7 @@ public class SimpleAccess {
 	//3, 当前最大已commit的instance num
 	//4, 当前最大已apply的instance num
 	//5, 当前最大已accept的instance num
+	//6, 当前存在的最小instance num
 	public static long getCurrentInstanceNum(String tableName, Range range){
 		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
 				CF_RANGE_pre+range);
@@ -399,13 +416,16 @@ public class SimpleAccess {
 				if (!col.isMarkedForDelete()){
 					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_INSTANCENUM));
 					if (c_current != null){
-						c_current.value().position(0);
-						return c_current.value().getLong();
+						try{
+							return ByteBufferUtil.toLong(c_current.value());
+						}catch(Exception e){
+							return -1;
+						}
 					}
 					return -1;
 				}
 				else{
-					System.out.println("this column is marked for delete");
+					System.out.println("getCurrentInstanceNum: this column is marked for delete");
 					return -1;
 				}					
 			}
@@ -419,7 +439,7 @@ public class SimpleAccess {
 			return;
 		
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -449,13 +469,16 @@ public class SimpleAccess {
 				if (!col.isMarkedForDelete()){
 					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_TIMESTAMP));
 					if (c_current != null){
-						c_current.value().position(0);
-						return c_current.value().getLong();
+						try{
+							return ByteBufferUtil.toLong(c_current.value());
+						}catch(Exception e){
+							return -1;
+						}
 					}
 					return -1;
 				}
 				else{
-					System.out.println("this column is marked for delete");
+					System.out.println("getCurrentInstanceTimestamp: this column is marked for delete");
 					return -1;
 				}					
 			}
@@ -469,7 +492,7 @@ public class SimpleAccess {
 			return;
 		
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -499,13 +522,16 @@ public class SimpleAccess {
 				if (!col.isMarkedForDelete()){
 					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_COMMIT));
 					if (c_current != null){
-						c_current.value().position(0);
-						return c_current.value().getLong();
+						try{
+							return ByteBufferUtil.toLong(c_current.value());
+						}catch(Exception e){
+							return -1;
+						}
 					}
 					return -1;
 				}
 				else{
-					System.out.println("this column is marked for delete");
+					System.out.println("getCurrentCommitNum: this column is marked for delete");
 					return -1;
 				}					
 			}
@@ -519,7 +545,7 @@ public class SimpleAccess {
 			return;
 		
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -549,13 +575,17 @@ public class SimpleAccess {
 				if (!col.isMarkedForDelete()){
 					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_APPLY));
 					if (c_current != null){
-						c_current.value().position(0);
-						return c_current.value().getLong();
+						try{
+							return ByteBufferUtil.toLong(c_current.value());
+						}
+						catch(Exception e){
+							return -1;
+						}
 					}
 					return -1;
 				}
 				else{
-					System.out.println("this column is marked for delete");
+					System.out.println("getCurrentApplyNum: this column is marked for delete");
 					return -1;
 				}					
 			}
@@ -575,7 +605,7 @@ public class SimpleAccess {
 			return;
 		
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -605,13 +635,16 @@ public class SimpleAccess {
 				if (!col.isMarkedForDelete()){
 					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_CRT_ACCEPTED));
 					if (c_current != null){
-						c_current.value().position(0);
-						return c_current.value().getLong();
+						try{
+							return ByteBufferUtil.toLong(c_current.value());
+						}catch(Exception e){
+							return -1;
+						}
 					}
 					return -1;
 				}
 				else{
-					System.out.println("this column is marked for delete");
+					System.out.println("getCurrentAcceptedNum: this column is marked for delete");
 					return -1;
 				}					
 			}
@@ -625,7 +658,7 @@ public class SimpleAccess {
 			return;
 		
 		// 1, make a rowmutation
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
 		
@@ -639,10 +672,63 @@ public class SimpleAccess {
 		applyRM(rm);
 	}
 	
+	public static long getMinInstanceNum(String tableName, Range range){
+		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
+				CF_RANGE_pre+range);
+		ColumnFamily cfam = store.getColumnFamily(QueryFilter.getNamesFilter(
+				Util.dk(tableName), new QueryPath(CF_RANGE_pre+range),
+				ByteBufferUtil.bytes(SC_CURRENT)));
+		if (cfam == null) return -1;
+//		cfam = cfam.cloneMe();
+		IColumn col=null;
+		if ((col = cfam.getColumn(ByteBufferUtil.bytes(SC_CURRENT))) != null) {
+			if (col instanceof SuperColumn) {
+				SuperColumn sc = (SuperColumn) col;
+				
+				if (!col.isMarkedForDelete()){
+					IColumn c_current = sc.getSubColumn(ByteBufferUtil.bytes(SimpleAccess.C_MIN_INSTANCENUM));
+					if (c_current != null){
+						try{
+							return ByteBufferUtil.toLong(c_current.value());
+						}catch(Exception e){
+							return -1;
+						}
+					}
+					return -1;
+				}
+				else{
+					System.out.println("getMinInstanceNum: this column is marked for delete");
+					return -1;
+				}					
+			}
+			else return -1;
+		}
+		return -1;
+	}
+	public static void setMinInstanceNum(String tableName, Range range, long instanceNumber){
+		long existed = getMinInstanceNum(tableName, range);
+		if (existed >= instanceNumber)
+			return;
+		
+		// 1, make a rowmutation
+		DecoratedKey<?> dk = Util.dk(tableName);
+		RowMutation rm = new RowMutation(TABLE, dk.key);
+		ColumnFamily cf = ColumnFamily.create(TABLE, CF_RANGE_pre+range);
+		
+		SuperColumn sc=new SuperColumn(ByteBufferUtil.bytes(SC_CURRENT), BytesType.instance);
+		Column c=new Column(ByteBufferUtil.bytes(C_MIN_INSTANCENUM), ByteBufferUtil.bytes(instanceNumber), System.currentTimeMillis());
+		sc.addColumn(c);
+		cf.addColumn(sc);
+		rm.add(cf);
+		
+		// 2, apply it
+		applyRM(rm);
+	}
+	
 	//for witness hint
 	public static RowMutation getHintRM_updateProposalNum(String tableName, Range range, long instanceNumber){
 		// 1, get whole super column for a instance
-		DecoratedKey dk = Util.dk(tableName);
+		DecoratedKey<?> dk = Util.dk(tableName);
 		RowMutation rm = new RowMutation(TABLE, dk.key);
 		ColumnFamilyStore store = Table.open(TABLE).getColumnFamilyStore(
 				CF_RANGE_pre+range);
@@ -967,49 +1053,94 @@ public class SimpleAccess {
 			e.printStackTrace();
 		}
 	}
+	
+	 // helper method to apply migration on the migration stage. typical migration failures will throw an 
+    // InvalidRequestException. atypical failures will throw a RuntimeException.
+    private static void applyMigrationOnStage(final Migration m)
+    {
+        Future f = StageManager.getStage(Stage.MIGRATION).submit(new Callable()
+        {
+            public Object call() throws Exception
+            {
+                m.apply();
+                m.announce();
+                return null;
+            }
+        });
+        try
+        {
+            f.get();
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError(e);
+        }
+        catch (ExecutionException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
 
-	public static void tryAddNewKeyspace() {
-		CFMetaData newCf = new CFMetaData(TABLE, CF_RANGE_pre,
+	public static void tryAddPaxosUtilKeyspace() {
+		CFMetaData defaultCf = new CFMetaData(TABLE, CF_RANGE_pre,
 				ColumnFamilyType.Super, BytesType.instance, null);
-		newCf.comment("instance slot").keyCacheSize(1.0).readRepairChance(0.0)
+		defaultCf.comment("instance slot").keyCacheSize(1.0).readRepairChance(0.0)
 				.mergeShardsChance(0.0);
-		KSMetaData newKs = new KSMetaData(newCf.ksName, LocalStrategy.class,
+		KSMetaData newKs = new KSMetaData(defaultCf.ksName, LocalStrategy.class,
 				KSMetaData.optsWithRF(1));
 
-		if (DatabaseDescriptor.getTableDefinition(newCf.ksName) == null) {
+		if (DatabaseDescriptor.getTableDefinition(defaultCf.ksName) == null) {
 			try {
 				new AddKeyspace(newKs).apply();
 			} catch (ConfigurationException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		} else {
 			logger.debug("Keyspace "+TABLE+" already exists.");
 		}
-		
-		CFMetaData testCf = new CFMetaData(TESTTABLE, CF_RANGE_pre,
-				ColumnFamilyType.Super, BytesType.instance, null);
-		testCf.comment("instance slot").keyCacheSize(1.0).readRepairChance(0.0)
-				.mergeShardsChance(0.0);
-		KSMetaData testKs = new KSMetaData(testCf.ksName, SimpleStrategy.class,
-				KSMetaData.optsWithRF(1));
-
-		if (DatabaseDescriptor.getTableDefinition(testCf.ksName) == null) {
-			try {
-				new AddKeyspace(testKs).apply();
-			} catch (ConfigurationException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
+	    	CFMetaData newCf = new CFMetaData(TABLE, CF_RANGE_pre+range,
+					ColumnFamilyType.Super, BytesType.instance, null);
+			newCf.comment("instance slot for a range").keyCacheSize(1.0).readRepairChance(0.0)
+					.mergeShardsChance(0.0);
+	
+			if (!DatabaseDescriptor.getTableDefinition(newKs.name).cfMetaData()
+					.containsKey(newCf.cfName)) {
+				try {
+					new AddColumnFamily(newCf).apply();
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (ConfigurationException e) {
+					e.printStackTrace();
+				}
+			} else {
+				logger.debug("SuperColumnFamily "+CF_RANGE_pre + range +" already exists.");
 			}
-		} else {
-			logger.debug("Keyspace TestTable already exists.");
 		}
+		
+//		CFMetaData testCf = new CFMetaData(TESTTABLE, CF_RANGE_pre,
+//				ColumnFamilyType.Super, BytesType.instance, null);
+//		testCf.comment("instance slot").keyCacheSize(1.0).readRepairChance(0.0)
+//				.mergeShardsChance(0.0);
+//		KSMetaData testKs = new KSMetaData(testCf.ksName, SimpleStrategy.class,
+//				KSMetaData.optsWithRF(1));
+//
+//		if (DatabaseDescriptor.getTableDefinition(testCf.ksName) == null) {
+//			try {
+//				new AddKeyspace(testKs).apply();
+//			} catch (ConfigurationException e) {
+//				e.printStackTrace();
+//			} catch (IOException e) {
+//				e.printStackTrace();
+//			}
+//		} else {
+//			logger.debug("Keyspace TestTable already exists.");
+//		}
 	}
 
+	@Deprecated
 	public static void tryAddNewColumnFamily() {
 		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
 	    	CFMetaData newCf = new CFMetaData(TABLE, CF_RANGE_pre+range,
@@ -1024,77 +1155,72 @@ public class SimpleAccess {
 				try {
 					new AddColumnFamily(newCf).apply();
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				} catch (ConfigurationException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			} else {
 				logger.debug("SuperColumnFamily "+CF_RANGE_pre + range +" already exists.");
 			}
 		}
-		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
-	    	CFMetaData newCf = new CFMetaData(TESTTABLE, CF_RANGE_pre+range,
-					ColumnFamilyType.Super, BytesType.instance, null);
-			newCf.comment("instance slot for a range").keyCacheSize(1.0).readRepairChance(0.0)
-					.mergeShardsChance(0.0);
-			KSMetaData newKs = new KSMetaData(newCf.ksName, LocalStrategy.class,
-					KSMetaData.optsWithRF(1));
-	
-			if (!DatabaseDescriptor.getTableDefinition(newKs.name).cfMetaData()
-					.containsKey(newCf.cfName)) {
-				try {
-					new AddColumnFamily(newCf).apply();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (ConfigurationException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-			} else {
-				logger.debug("SuperColumnFamily "+CF_RANGE_pre + range +" already exists.");
-			}
-		}
-		CFMetaData newCf = new CFMetaData(TABLE, CF_RANGE_pre,
-				ColumnFamilyType.Super, BytesType.instance, null);
-		newCf.comment("instance slot for a range").keyCacheSize(1.0).readRepairChance(0.0)
-				.mergeShardsChance(0.0);
-		KSMetaData newKs = new KSMetaData(newCf.ksName, LocalStrategy.class,
-				KSMetaData.optsWithRF(1));
-
-		if (!DatabaseDescriptor.getTableDefinition(newKs.name).cfMetaData()
-				.containsKey(newCf.cfName)) {
-			try {
-				new AddColumnFamily(newCf).apply();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (ConfigurationException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-		} else {
-			logger.debug("SuperColumnFamily "+CF_RANGE_pre+" already exists.");
-		}
+//		for (Range range : StorageService.instance.getAllRanges(StorageService.instance.getTokenMetadata().sortedTokens())){
+//	    	CFMetaData newCf = new CFMetaData(TESTTABLE, CF_RANGE_pre+range,
+//					ColumnFamilyType.Super, BytesType.instance, null);
+//			newCf.comment("instance slot for a range").keyCacheSize(1.0).readRepairChance(0.0)
+//					.mergeShardsChance(0.0);
+//			KSMetaData newKs = new KSMetaData(newCf.ksName, LocalStrategy.class,
+//					KSMetaData.optsWithRF(1));
+//	
+//			if (!DatabaseDescriptor.getTableDefinition(newKs.name).cfMetaData()
+//					.containsKey(newCf.cfName)) {
+//				try {
+//					new AddColumnFamily(newCf).apply();
+//				} catch (IOException e) {
+//					e.printStackTrace();
+//				} catch (ConfigurationException e) {
+//					e.printStackTrace();
+//				}
+//			} else {
+//				logger.debug("SuperColumnFamily "+CF_RANGE_pre + range +" already exists.");
+//			}
+//		}
+//		CFMetaData newCf = new CFMetaData(TABLE, CF_RANGE_pre,
+//				ColumnFamilyType.Super, BytesType.instance, null);
+//		newCf.comment("instance slot for a range").keyCacheSize(1.0).readRepairChance(0.0)
+//				.mergeShardsChance(0.0);
+//		KSMetaData newKs = new KSMetaData(newCf.ksName, LocalStrategy.class,
+//				KSMetaData.optsWithRF(1));
+//
+//		if (!DatabaseDescriptor.getTableDefinition(newKs.name).cfMetaData()
+//				.containsKey(newCf.cfName)) {
+//			try {
+//				new AddColumnFamily(newCf).apply();
+//			} catch (IOException e) {
+//				e.printStackTrace();
+//			} catch (ConfigurationException e) {
+//				e.printStackTrace();
+//			}
+//		} else {
+//			logger.debug("SuperColumnFamily "+CF_RANGE_pre+" already exists.");
+//		}
 	}
 	
-	public static void tryAddTestKeyspace() {		
+	public static void tryAddTestKeyspace(int replicaFactor) {		
 		CFMetaData testCf = new CFMetaData(TESTTABLE, CF_RANGE_pre,
 				ColumnFamilyType.Super, BytesType.instance, null);
 		testCf.comment("instance slot").keyCacheSize(1.0).readRepairChance(0.0)
 				.mergeShardsChance(0.0);
-		KSMetaData testKs = new KSMetaData(testCf.ksName, SimpleStrategy.class,
-				KSMetaData.optsWithRF(1));
+		
+		KSMetaData testKs = new KSMetaData(TESTTABLE, SimpleStrategy.class,
+				KSMetaData.optsWithRF(replicaFactor), testCf);
 
 		if (DatabaseDescriptor.getTableDefinition(testCf.ksName) == null) {
 			try {
-				new AddKeyspace(testKs).apply();
+//				new AddKeyspace(testKs).apply();
+				applyMigrationOnStage(new AddKeyspace(testKs));
 			} catch (ConfigurationException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		} else {
@@ -1106,10 +1232,8 @@ public class SimpleAccess {
 			try {
 				new AddColumnFamily(testCf).apply();
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			} catch (ConfigurationException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		} else {

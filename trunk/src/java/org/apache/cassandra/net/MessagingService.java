@@ -325,6 +325,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         if (logger_.isTraceEnabled())
             logger_.trace(FBUtilities.getLocalAddress() + " sending " + message.getVerb() + " to " + id + "@" + to);
+//        System.out.println(FBUtilities.getLocalAddress() + " sending " + message.getVerb() + " to " + id + "@" + to);
 
         // do local deliveries
         if ( message.getFrom().equals(to) )
